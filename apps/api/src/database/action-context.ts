@@ -1,0 +1,18 @@
+import type { ActionSource } from '@onetappe/domain';
+
+/**
+ * Who is acting and through which channel. Every write transaction carries one; the
+ * database copies it into history and audit rows and rejects critical writes without it.
+ */
+export interface ActionContext {
+  readonly actorUserId: string | null;
+  /** Role the actor is acting in, e.g. CUSTOMER, WORKER, OPERATIONS_AGENT. */
+  readonly actorRole: string | null;
+  readonly source: ActionSource;
+  /** Correlates all rows written by one API request. */
+  readonly requestId: string;
+}
+
+export function systemContext(requestId: string): ActionContext {
+  return { actorUserId: null, actorRole: 'SYSTEM', source: 'SYSTEM', requestId };
+}
