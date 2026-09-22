@@ -256,6 +256,7 @@ export class BookingCreationService {
         zoneId: location.zoneId,
         period: blocked,
         crewSlot,
+        bookingType: input.bookingType,
         status: 'HELD',
         holdExpiresAt: paymentDueBy,
       });

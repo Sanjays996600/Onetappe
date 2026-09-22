@@ -330,7 +330,7 @@ describe('money protections', () => {
         .insertInto('payment')
         .values({
           booking_id: booking.id,
-          provider: 'TEST',
+          provider: 'SANDBOX',
           provider_order_id: randomUUID(),
           provider_payment_id: randomUUID(),
           amount_paise: booking.totalPaise,
@@ -372,7 +372,7 @@ describe('money protections', () => {
           .insertInto('payment')
           .values({
             booking_id: booking.id,
-            provider: 'TEST',
+            provider: 'SANDBOX',
             amount_paise: booking.totalPaise,
             status: 'CAPTURED',
             captured_at: new Date(),
@@ -392,7 +392,7 @@ describe('money protections', () => {
       app.db
         .insertInto('payment_event')
         .values({
-          provider: 'TEST',
+          provider: 'SANDBOX',
           provider_event_id: eventId,
           event_type: 'payment.captured',
           signature_verified: true,

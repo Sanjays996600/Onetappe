@@ -85,9 +85,12 @@ export interface AuthSession {
   id: Generated<string>;
   ip: string | null;
   last_used_at: Generated<Timestamp>;
+  mfa_verified_at: Timestamp | null;
+  previous_refresh_token_hash: string | null;
   refresh_token_hash: string;
   revoke_reason: string | null;
   revoked_at: Timestamp | null;
+  rotated_at: Timestamp | null;
   user_agent: string | null;
   user_id: string;
 }
@@ -229,6 +232,27 @@ export interface BookingVerificationCode {
   verified_at: Timestamp | null;
 }
 
+export interface BusinessSetting {
+  description: string;
+  key: string;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+  value: Json;
+}
+
+export interface CancellationRule {
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  description: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  min_minutes_before_start: number;
+  refund_bp: number;
+  service_id: string | null;
+  valid_from: Timestamp;
+  valid_to: Timestamp | null;
+}
+
 export interface ChargeRule {
   booking_type: string | null;
   city_id: string | null;
@@ -312,6 +336,16 @@ export interface Invoice {
 export interface InvoiceSequence {
   next_value: Generated<number>;
   series: string;
+}
+
+export interface JobRun {
+  error: string | null;
+  finished_at: Timestamp | null;
+  id: Generated<number>;
+  job_name: string;
+  processed: Generated<number>;
+  started_at: Generated<Timestamp>;
+  status: Generated<string>;
 }
 
 export interface LegalDocument {
@@ -398,6 +432,7 @@ export interface Payment {
   booking_id: string;
   captured_at: Timestamp | null;
   cash_receipt_number: string | null;
+  checkout: Json | null;
   collected_by: string | null;
   created_at: Generated<Timestamp>;
   currency: Generated<string>;
@@ -422,6 +457,7 @@ export interface PaymentEvent {
   provider: string;
   provider_event_id: string;
   received_at: Generated<Timestamp>;
+  refund_id: string | null;
   signature_verified: boolean;
 }
 
@@ -527,6 +563,7 @@ export interface Refund {
   decided_at: Timestamp | null;
   decided_by: string | null;
   decision_note: string | null;
+  decision_policy: string | null;
   failure_reason: string | null;
   id: Generated<string>;
   idempotency_key: string;
@@ -694,8 +731,23 @@ export interface StaffCredential {
   mfa_enrolled_at: Timestamp | null;
   password_changed_at: Generated<Timestamp>;
   password_hash: string;
+  totp_last_used_step: number | null;
+  totp_pending_secret_encrypted: Buffer | null;
   totp_secret_encrypted: Buffer | null;
   updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
+export interface StaffLoginChallenge {
+  attempts: Generated<number>;
+  consumed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp;
+  id: Generated<string>;
+  ip: string | null;
+  max_attempts: Generated<number>;
+  purpose: string;
+  token_hash: string;
   user_id: string;
 }
 
@@ -920,6 +972,26 @@ export interface WorkerShift {
   zone_id: string;
 }
 
+export interface WorkerStatusHistory {
+  actor_role: string | null;
+  actor_user_id: string | null;
+  from_status: string | null;
+  id: Generated<number>;
+  occurred_at: Generated<Timestamp>;
+  reason: string | null;
+  request_id: string | null;
+  source: string;
+  to_status: string;
+  worker_id: string;
+}
+
+export interface WorkerStatusTransition {
+  from_status: string;
+  requires_reason: boolean;
+  sources: string[];
+  to_status: string;
+}
+
 export interface WorkerTraining {
   assessed_at: Timestamp | null;
   assessed_by: string | null;
@@ -979,6 +1051,8 @@ export interface DB {
   booking_status_transition: BookingStatusTransition;
   booking_task: BookingTask;
   booking_verification_code: BookingVerificationCode;
+  business_setting: BusinessSetting;
+  cancellation_rule: CancellationRule;
   charge_rule: ChargeRule;
   city: City;
   consent_record: ConsentRecord;
@@ -986,6 +1060,7 @@ export interface DB {
   customer_profile: CustomerProfile;
   invoice: Invoice;
   invoice_sequence: InvoiceSequence;
+  job_run: JobRun;
   legal_document: LegalDocument;
   locale: Locale;
   locality: Locality;
@@ -1016,6 +1091,7 @@ export interface DB {
   service_zone: ServiceZone;
   serviceable_locality: ServiceableLocality;
   staff_credential: StaffCredential;
+  staff_login_challenge: StaffLoginChallenge;
   support_case: SupportCase;
   support_case_event: SupportCaseEvent;
   tax_rate: TaxRate;
@@ -1033,6 +1109,8 @@ export interface DB {
   worker_restriction: WorkerRestriction;
   worker_service_permission: WorkerServicePermission;
   worker_shift: WorkerShift;
+  worker_status_history: WorkerStatusHistory;
+  worker_status_transition: WorkerStatusTransition;
   worker_training: WorkerTraining;
   worker_verification: WorkerVerification;
   zone: Zone;

@@ -228,6 +228,7 @@ export class DispatchService {
           zoneId: booking.zoneId,
           period: blocked,
           crewSlot: slot,
+          bookingType: booking.bookingType,
           status: 'ALLOCATED',
           holdExpiresAt: null,
           excludeWorkerIds: [...exclude],

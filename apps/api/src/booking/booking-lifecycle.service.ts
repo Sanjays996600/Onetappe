@@ -283,6 +283,7 @@ export class BookingLifecycleService {
         zoneId: booking.zoneId,
         period: blocked,
         crewSlot: slot,
+        bookingType: booking.bookingType,
         status: 'HELD',
         holdExpiresAt: due.payment_due_by,
       });

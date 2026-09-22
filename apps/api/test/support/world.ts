@@ -13,7 +13,7 @@ import { VerificationCodeService } from '../../src/booking/verification-code.ser
 import type { ActionContext } from '../../src/database/action-context.js';
 import { DATABASE } from '../../src/database/database.module.js';
 import type { DB } from '../../src/database/db.generated.js';
-import { inTransaction } from '../../src/database/transaction.js';
+import { inTransaction, type Tx } from '../../src/database/transaction.js';
 
 export interface TestApp {
   readonly db: Kysely<DB>;
@@ -116,6 +116,34 @@ function uniquePincode(): string {
 function tomorrowInIndia(): string {
   const tomorrow = new Date(Date.now() + 24 * 3_600_000);
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(tomorrow);
+}
+
+/**
+ * Moves a freshly registered worker through onboarding exactly as the lifecycle allows:
+ * automatic steps as SYSTEM, approval and activation as ADMIN.
+ */
+export async function walkWorkerToActive(tx: Tx, workerId: string, staffId: string): Promise<void> {
+  const steps: Array<[string, 'SYSTEM' | 'ADMIN']> = [
+    ['PROFILE_PENDING', 'SYSTEM'],
+    ['DOCUMENTS_PENDING', 'SYSTEM'],
+    ['VERIFICATION_PENDING', 'SYSTEM'],
+    ['TRAINING_PENDING', 'SYSTEM'],
+    ['APPROVED', 'ADMIN'],
+    ['ACTIVE', 'ADMIN'],
+  ];
+  for (const [status, source] of steps) {
+    await sql`SELECT set_config('app.source', ${source}, true)`.execute(tx);
+    await tx
+      .updateTable('worker_profile')
+      .set(
+        status === 'APPROVED'
+          ? { status, approved_by: staffId, approved_at: new Date() }
+          : { status },
+      )
+      .where('user_id', '=', workerId)
+      .execute();
+  }
+  await sql`SELECT set_config('app.source', 'SYSTEM', true)`.execute(tx);
 }
 
 export interface WorldOptions {
@@ -264,9 +292,6 @@ export async function createWorld(db: Kysely<DB>, options: WorldOptions = {}): P
         .values({
           user_id: user.id,
           worker_code: `W${suffix}${i}`.slice(0, 13),
-          status: 'APPROVED',
-          approved_by: staff.id,
-          approved_at: new Date(),
           primary_zone_id: zone.id,
         })
         .execute();
@@ -303,6 +328,11 @@ export async function createWorld(db: Kysely<DB>, options: WorldOptions = {}): P
           zone_id: zone.id,
           period: sql`tstzrange(${at(options.shiftStartHour ?? 8)}, ${at(options.shiftEndHour ?? 20)}, '[)')`,
         })
+        .execute();
+      await walkWorkerToActive(tx, user.id, staff.id);
+      await tx
+        .insertInto('worker_presence')
+        .values({ worker_id: user.id, is_online: true })
         .execute();
       workerIds.push(user.id);
     }

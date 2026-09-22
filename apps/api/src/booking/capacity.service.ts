@@ -11,6 +11,8 @@ export interface ReservationRequest {
   /** Worker time to block: travel buffer + service + reset buffer. */
   readonly period: TimeRange;
   readonly crewSlot: number;
+  /** Instant bookings only go to workers who are online right now. */
+  readonly bookingType: 'INSTANT' | 'SCHEDULED';
   readonly status: 'HELD' | 'ALLOCATED';
   /** Required for HELD reservations. */
   readonly holdExpiresAt: Date | null;
@@ -41,7 +43,10 @@ export class CapacityService {
   /** Eligible workers with a covering shift and no known overlap, least busy first. */
   async findCandidates(
     tx: Tx,
-    request: Pick<ReservationRequest, 'serviceId' | 'zoneId' | 'period' | 'excludeWorkerIds'>,
+    request: Pick<
+      ReservationRequest,
+      'serviceId' | 'zoneId' | 'period' | 'excludeWorkerIds' | 'bookingType'
+    >,
   ): Promise<string[]> {
     const period = range(request.period);
     const exclude = request.excludeWorkerIds ?? [];
@@ -65,7 +70,18 @@ export class CapacityService {
           .where(sql<boolean>`load.period && s.period`)
           .as('load'),
       )
-      .where('w.status', '=', 'APPROVED')
+      .where('w.status', 'in', ['ACTIVE', 'RESTRICTED'])
+      .$if(request.bookingType === 'INSTANT', (qb) =>
+        qb.where((eb) =>
+          eb.exists(
+            eb
+              .selectFrom('worker_presence as p')
+              .select(sql`1`.as('one'))
+              .whereRef('p.worker_id', '=', 'w.user_id')
+              .where('p.is_online', '=', true),
+          ),
+        ),
+      )
       .where(
         sql<boolean>`worker_ineligibility_reason(w.user_id, ${request.serviceId}::uuid, ${request.zoneId}::uuid, ${period}) IS NULL`,
       )

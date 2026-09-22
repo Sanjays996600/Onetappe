@@ -21,6 +21,7 @@ export interface LockedBooking {
   readonly customerUserId: string;
   readonly serviceId: string;
   readonly zoneId: string;
+  readonly bookingType: 'INSTANT' | 'SCHEDULED';
   readonly scheduledStart: Date;
   readonly scheduledEnd: Date;
   readonly version: number;
@@ -44,6 +45,7 @@ export class BookingTransitionService {
         'customer_user_id',
         'service_id',
         'zone_id',
+        'booking_type',
         'scheduled_start',
         'scheduled_end',
         'version',
@@ -59,6 +61,7 @@ export class BookingTransitionService {
       customerUserId: row.customer_user_id,
       serviceId: row.service_id,
       zoneId: row.zone_id,
+      bookingType: row.booking_type as 'INSTANT' | 'SCHEDULED',
       scheduledStart: row.scheduled_start,
       scheduledEnd: row.scheduled_end,
       version: row.version,
