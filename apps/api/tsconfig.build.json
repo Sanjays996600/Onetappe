@@ -1,7 +1,9 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "rootDir": "src"
+    "rootDir": "src",
+    // The production build consumes the compiled @onetappe/domain package, not its source.
+    "customConditions": []
   },
   "include": ["src"],
   "exclude": ["src/**/*.test.ts"]

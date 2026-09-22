@@ -9,47 +9,99 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Each check is its own job so branch protection can require them individually:
+#   format · lint · typecheck · domain-tests · migrations · integration-tests
 jobs:
-  check:
+  format:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
 
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - name: Production build
+        run: pnpm build
+
+  domain-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @onetappe/domain test
+
+  migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     services:
       postgres:
         image: postgres:16
-        env:
-          POSTGRES_USER: onetappe
-          POSTGRES_PASSWORD: onetappe
-          POSTGRES_DB: onetappe_test
+        env: { POSTGRES_USER: onetappe, POSTGRES_PASSWORD: onetappe, POSTGRES_DB: onetappe_ci }
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U onetappe"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
+          --health-cmd "pg_isready -U onetappe -d onetappe_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      DATABASE_URL: postgres://onetappe:onetappe@localhost:5432/onetappe_test
-      TEST_DATABASE_URL: postgres://onetappe:onetappe@localhost:5432/onetappe_test
-      VERIFICATION_CODE_SECRET: ci-only-secret-0123456789abcdef-0123456789
-
+      APP_ENV: test
+      DATABASE_URL: postgres://onetappe:onetappe@localhost:5432/onetappe_ci
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-
+      - uses: actions/setup-node@v5
+        with: { node-version-file: .nvmrc, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm format:check
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm build
+      - name: Apply all migrations to an empty database
+        run: pnpm db:migrate
+      - name: Re-running migrations is a no-op
+        run: pnpm db:migrate | tee out.txt && grep -q "0 applied" out.txt
+      - name: Generated database types match the migrated schema
+        run: pnpm --filter @onetappe/api run db:codegen:verify
 
-      - name: Migrations apply cleanly and generated DB types are current
-        run: |
-          pnpm db:migrate
-          pnpm --filter @onetappe/api run db:codegen:verify
-
-      - run: pnpm test
+  integration-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: onetappe, POSTGRES_PASSWORD: onetappe, POSTGRES_DB: onetappe_test }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U onetappe -d onetappe_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://onetappe:onetappe@localhost:5432/onetappe_test
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @onetappe/api test
