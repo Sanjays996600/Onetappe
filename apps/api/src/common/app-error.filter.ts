@@ -39,7 +39,14 @@ export class AppErrorFilter implements ExceptionFilter {
     } else if (error instanceof HttpException) {
       status = error.getStatus();
       body = {
-        code: status === 404 ? 'NOT_FOUND' : status === 413 ? 'PAYLOAD_TOO_LARGE' : 'HTTP_ERROR',
+        code:
+          status === 400
+            ? 'INVALID_REQUEST'
+            : status === 404
+              ? 'NOT_FOUND'
+              : status === 413
+                ? 'PAYLOAD_TOO_LARGE'
+                : 'HTTP_ERROR',
         message: error.message,
         details: {},
       };

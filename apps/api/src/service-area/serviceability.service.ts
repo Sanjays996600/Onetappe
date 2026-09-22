@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
-import type { Tx } from '../database/transaction.js';
+import type { Queryable } from '../database/transaction.js';
 
 export interface ServiceLocation {
   readonly localityId: string;
@@ -24,7 +24,7 @@ export interface ServiceabilityQuery {
  */
 @Injectable()
 export class ServiceabilityService {
-  async resolve(tx: Tx, query: ServiceabilityQuery): Promise<ServiceLocation | null> {
+  async resolve(tx: Queryable, query: ServiceabilityQuery): Promise<ServiceLocation | null> {
     const distance = sql<number>`distance_m(${query.lat}::numeric, ${query.lng}::numeric, sl.center_lat, sl.center_lng)`;
 
     const row = await tx

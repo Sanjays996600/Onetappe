@@ -4,6 +4,7 @@ import type { INestApplication } from '@nestjs/common';
 import { AppModule } from './app.module.js';
 import { AppErrorFilter } from './common/app-error.filter.js';
 import { registerRequestId } from './common/http/request-id.js';
+import { MAX_DOCUMENT_BYTES } from './storage/document-storage.js';
 import type { Env } from './config/env.js';
 
 export const API_PREFIX = 'api/v1';
@@ -24,7 +25,16 @@ export function configureApp(app: INestApplication, env: Pick<Env, 'CORS_ORIGINS
   // One version prefix for every client; breaking changes go to /api/v2.
   app.setGlobalPrefix(API_PREFIX);
   app.useGlobalFilters(new AppErrorFilter());
-  registerRequestId((app as NestFastifyApplication).getHttpAdapter().getInstance());
+  const fastify = (app as NestFastifyApplication).getHttpAdapter().getInstance();
+  registerRequestId(fastify);
+  // Document uploads (local storage provider) arrive as raw bytes with their own limit.
+  fastify.addContentTypeParser(
+    'application/octet-stream',
+    { parseAs: 'buffer', bodyLimit: MAX_DOCUMENT_BYTES },
+    (_request, body, done) => {
+      done(null, body);
+    },
+  );
   const origins = env.CORS_ORIGINS.split(',')
     .map((o) => o.trim())
     .filter(Boolean);

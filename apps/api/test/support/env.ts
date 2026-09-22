@@ -16,3 +16,5 @@ Object.assign(process.env, {
   PAYMENT_PROVIDER: 'sandbox',
   SANDBOX_WEBHOOK_SECRET: 'test-sandbox-webhook-secret-0123456789ab',
 });
+
+process.env['STORAGE_DIR'] ??= `${process.env['TMPDIR'] ?? '/tmp'}/onetappe-test-storage`;

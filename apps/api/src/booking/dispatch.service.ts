@@ -163,6 +163,78 @@ export class DispatchService {
   }
 
   /**
+   * Takes the job away from its current worker (they withdrew, did not show up, or
+   * operations reassigns it), releases their time and offers the job again — to a chosen
+   * worker when given, otherwise to the next eligible one. Workers who withdrew or did
+   * not show are not offered this booking again.
+   */
+  async unassign(
+    bookingId: string,
+    kind: 'WORKER_WITHDREW' | 'WORKER_NO_SHOW' | 'REASSIGNED',
+    reason: string,
+    context: ActionContext,
+    options: { assignToWorkerId?: string } = {},
+  ): Promise<DispatchResult> {
+    if (!reason.trim()) throw new ValidationError('REASON_REQUIRED', 'Please give a reason');
+    return inTransaction(this.db, { ...context, reason }, async (tx) => {
+      const booking = await this.transitions.lock(tx, bookingId);
+      const live = await tx
+        .selectFrom('booking_assignment')
+        .select(['id', 'worker_id', 'status', 'reservation_id'])
+        .where('booking_id', '=', bookingId)
+        .where('status', 'in', ['OFFERED', 'ACCEPTED'])
+        .forUpdate()
+        .execute();
+
+      if (kind === 'WORKER_WITHDREW') {
+        const mine = live.find(
+          (a) => a.worker_id === context.actorUserId && a.status === 'ACCEPTED',
+        );
+        if (context.source === 'WORKER_APP' && !mine) {
+          throw new ForbiddenError(
+            'NOT_YOUR_JOB',
+            'You are not the assigned worker for this booking',
+          );
+        }
+      }
+      if (!['CONFIRMED', 'ASSIGNED', 'EN_ROUTE'].includes(booking.status)) {
+        throw new BusinessRuleError(
+          'CANNOT_REASSIGN',
+          `Booking ${booking.bookingCode} is ${booking.status}`,
+        );
+      }
+
+      for (const assignment of live) {
+        await tx
+          .updateTable('booking_assignment')
+          .set({
+            status: assignment.status === 'OFFERED' ? 'CANCELLED' : 'WITHDRAWN',
+            end_reason: kind,
+          })
+          .where('id', '=', assignment.id)
+          .execute();
+        await this.capacity.release(tx, assignment.reservation_id, kind);
+        if (assignment.status === 'ACCEPTED' && kind !== 'WORKER_WITHDREW') {
+          await this.notifier.toWorker(tx, bookingId, assignment.worker_id, 'JOB_CANCELLED', {
+            dedupeSuffix: assignment.id,
+          });
+        }
+      }
+
+      let current = booking;
+      if (booking.status === 'ASSIGNED' || booking.status === 'EN_ROUTE') {
+        await this.transitions.apply(tx, booking, 'WORKER_UNASSIGNED', context, {
+          reason: `${kind}: ${reason}`,
+        });
+        current = { ...booking, status: 'CONFIRMED' };
+      }
+      return this.allocateAndOffer(tx, current, context, {
+        ...(options.assignToWorkerId ? { preferredWorkerId: options.assignToWorkerId } : {}),
+      });
+    });
+  }
+
+  /**
    * Ensures every crew slot of a CONFIRMED booking has a reservation and a live offer.
    * HELD reservations from checkout become ALLOCATED; missing slots are re-reserved,
    * skipping workers who already declined or ignored this booking.
@@ -171,6 +243,7 @@ export class DispatchService {
     tx: Tx,
     booking: LockedBooking,
     context: ActionContext,
+    options: { preferredWorkerId?: string } = {},
   ): Promise<DispatchResult> {
     if (booking.status !== 'CONFIRMED') return { offers: [], unfilledCrewSlots: [] };
 
@@ -229,17 +302,22 @@ export class DispatchService {
 
       let reservation = reservations.find((r) => r.crew_slot === slot && r.status === 'ALLOCATED');
       if (!reservation) {
-        const created = await this.capacity.reserve(tx, {
+        const request = {
           bookingId: booking.id,
           serviceId: booking.serviceId,
           zoneId: booking.zoneId,
           period: blocked,
           crewSlot: slot,
           bookingType: booking.bookingType,
-          status: 'ALLOCATED',
+          status: 'ALLOCATED' as const,
           holdExpiresAt: null,
           excludeWorkerIds: [...exclude],
-        });
+        };
+        // An operations choice of worker is honoured or fails loudly (never silently swapped).
+        const created =
+          options.preferredWorkerId && slot === 1
+            ? await this.capacity.reserveWorker(tx, options.preferredWorkerId, request)
+            : await this.capacity.reserve(tx, request);
         if (!created) {
           unfilled.push(slot);
           continue;

@@ -48,6 +48,12 @@ const EnvSchema = z
     WHATSAPP_PROVIDER: z.enum(['log']).default('log'),
     EMAIL_PROVIDER: z.enum(['log']).default('log'),
 
+    /** Worker documents. `local` = encrypted files on this server (not for production). */
+    STORAGE_PROVIDER: z.enum(['local']).default('local'),
+    STORAGE_DIR: z.string().default('.storage'),
+    /** Public base URL of this API, used to build upload links for the local storage provider. */
+    PUBLIC_API_URL: z.url().default('http://localhost:3000'),
+
     /** Comma-separated origins allowed to call the API from browsers (admin panel). */
     CORS_ORIGINS: z.string().default(''),
   })
@@ -65,6 +71,14 @@ const EnvSchema = z
     } else if (env.RAZORPAY_KEY_ID?.startsWith('rzp_live_')) {
       // Live money must never move from a non-production environment.
       fail(`${env.APP_ENV} must not use live Razorpay keys`);
+    }
+
+    if (env.APP_ENV === 'production') {
+      // Only the local provider exists today; production needs managed object storage
+      // (e.g. S3 with presigned uploads) behind the DocumentStorage interface first.
+      fail(
+        `production needs managed object storage for worker documents (STORAGE_PROVIDER=${env.STORAGE_PROVIDER} is local only)`,
+      );
     }
 
     if (env.OTP_PROVIDER === 'test' && env.APP_ENV !== 'test') {

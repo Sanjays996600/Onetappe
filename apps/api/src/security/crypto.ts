@@ -109,20 +109,26 @@ export class DataCipher {
   }
 
   encrypt(plaintext: string): Buffer {
-    const iv = randomBytes(12);
-    const cipher = createCipheriv('aes-256-gcm', this.key, iv);
-    const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
-    return Buffer.concat([Buffer.from([ENCRYPTION_VERSION]), iv, cipher.getAuthTag(), ciphertext]);
+    return this.encryptBytes(Buffer.from(plaintext, 'utf8'));
   }
 
   decrypt(payload: Buffer): string {
+    return this.decryptBytes(payload).toString('utf8');
+  }
+
+  encryptBytes(plaintext: Buffer): Buffer {
+    const iv = randomBytes(12);
+    const cipher = createCipheriv('aes-256-gcm', this.key, iv);
+    const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+    return Buffer.concat([Buffer.from([ENCRYPTION_VERSION]), iv, cipher.getAuthTag(), ciphertext]);
+  }
+
+  decryptBytes(payload: Buffer): Buffer {
     if (payload[0] !== ENCRYPTION_VERSION) throw new Error('Unknown encryption version');
     const iv = payload.subarray(1, 13);
     const tag = payload.subarray(13, 29);
     const decipher = createDecipheriv('aes-256-gcm', this.key, iv);
     decipher.setAuthTag(tag);
-    return Buffer.concat([decipher.update(payload.subarray(29)), decipher.final()]).toString(
-      'utf8',
-    );
+    return Buffer.concat([decipher.update(payload.subarray(29)), decipher.final()]);
   }
 }

@@ -87,7 +87,7 @@ export class BookingTransitionService {
       );
     }
 
-    const reason = options.reason?.trim() || null;
+    const reason = options.reason?.trim() || context.reason?.trim() || null;
     const result = resolveBookingTransition({
       from: booking.status,
       event,
@@ -102,7 +102,7 @@ export class BookingTransitionService {
       .set({ status: result.transition.to })
       .where('id', '=', booking.id)
       .execute();
-    await setEvent(tx, '', null);
+    await setEvent(tx, '', context.reason);
     return result.transition.to;
   }
 }

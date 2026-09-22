@@ -146,7 +146,7 @@ export class BookingLifecycleService {
         .set({ scheduled_start: promise.start, scheduled_end: promise.end })
         .where('id', '=', booking.id)
         .execute();
-      await setEvent(tx, '', null);
+      await setEvent(tx, '', context.reason);
 
       const moved: LockedBooking = {
         ...booking,

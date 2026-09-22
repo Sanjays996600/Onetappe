@@ -11,6 +11,11 @@ export interface ActionContext {
   readonly source: ActionSource;
   /** Correlates all rows written by one API request. */
   readonly requestId: string;
+  /**
+   * Why the action is taken. Required for operations overrides; recorded on every audit
+   * and history row written in the transaction.
+   */
+  readonly reason?: string | null;
 }
 
 export function systemContext(requestId: string): ActionContext {

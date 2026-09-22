@@ -180,11 +180,7 @@ export class NotificationDispatcher {
     const out: Record<string, string> = {};
     for (const [key, value] of Object.entries(values)) {
       if (value && typeof value === 'object' && '$date' in value) {
-        out[key] = formatDateTime(
-          new Date(String(value.$date)),
-          timeZone,
-          locale,
-        );
+        out[key] = formatDateTime(new Date(String(value.$date)), timeZone, locale);
       } else if (typeof value === 'number' && /amount/i.test(key)) {
         out[key] = formatAmount(value, locale);
       } else {

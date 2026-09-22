@@ -4,6 +4,8 @@ import type { DB } from './db.generated.js';
 import { translateDatabaseError } from './database-errors.js';
 
 export type Tx = Transaction<DB>;
+/** Anything that can run queries: the pool or an open transaction. */
+export type Queryable = Kysely<DB>;
 
 /**
  * Runs `work` in one database transaction with the action context installed as
@@ -23,7 +25,7 @@ export async function inTransaction<T>(
                set_config('app.source', ${context.source}, true),
                set_config('app.request_id', ${context.requestId}, true),
                set_config('app.event', '', true),
-               set_config('app.reason', '', true)
+               set_config('app.reason', ${context.reason?.trim() ?? ''}, true)
       `.execute(tx);
       return work(tx);
     });
@@ -34,9 +36,14 @@ export async function inTransaction<T>(
 
 /**
  * Sets the booking event and reason for the statements that follow in this transaction.
- * The booking trigger validates the event against the allowed transitions.
+ * The booking trigger validates the event against the allowed transitions. Pass the
+ * context's own reason (or null) to restore it afterwards.
  */
-export async function setEvent(tx: Tx, event: string, reason: string | null): Promise<void> {
+export async function setEvent(
+  tx: Tx,
+  event: string,
+  reason: string | null | undefined,
+): Promise<void> {
   await sql`
     SELECT set_config('app.event', ${event}, true),
            set_config('app.reason', ${reason ?? ''}, true)
