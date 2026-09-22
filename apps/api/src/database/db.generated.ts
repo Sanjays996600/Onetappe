@@ -338,6 +338,12 @@ export interface InvoiceSequence {
   series: string;
 }
 
+export interface JobLease {
+  job_name: string;
+  locked_until: Timestamp;
+  owner: string;
+}
+
 export interface JobRun {
   error: string | null;
   finished_at: Timestamp | null;
@@ -430,6 +436,7 @@ export interface OtpChallenge {
 export interface Payment {
   amount_paise: number;
   booking_id: string;
+  captured_amount_paise: number | null;
   captured_at: Timestamp | null;
   cash_receipt_number: string | null;
   checkout: Json | null;
@@ -439,6 +446,7 @@ export interface Payment {
   failure_reason: string | null;
   id: Generated<string>;
   idempotency_key: string;
+  is_duplicate: Generated<boolean>;
   method: string | null;
   provider: string;
   provider_order_id: string | null;
@@ -1060,6 +1068,7 @@ export interface DB {
   customer_profile: CustomerProfile;
   invoice: Invoice;
   invoice_sequence: InvoiceSequence;
+  job_lease: JobLease;
   job_run: JobRun;
   legal_document: LegalDocument;
   locale: Locale;

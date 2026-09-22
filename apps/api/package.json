@@ -10,7 +10,8 @@
     "test": "node --env-file-if-exists=.env ./node_modules/vitest/vitest.mjs run",
     "db:migrate": "tsx src/database/migrate.cli.ts",
     "db:codegen": "kysely-codegen --dialect postgres --out-file src/database/db.generated.ts --exclude-pattern schema_migration --date-parser string --type-mapping '{\"int8\":\"number\"}'",
-    "db:codegen:verify": "kysely-codegen --dialect postgres --out-file src/database/db.generated.ts --exclude-pattern schema_migration --date-parser string --type-mapping '{\"int8\":\"number\"}' --verify"
+    "db:codegen:verify": "kysely-codegen --dialect postgres --out-file src/database/db.generated.ts --exclude-pattern schema_migration --date-parser string --type-mapping '{\"int8\":\"number\"}' --verify",
+    "start:worker": "node dist/worker.js"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.4",

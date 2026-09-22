@@ -12,6 +12,7 @@ import { DATABASE } from '../database/database.module.js';
 import type { DB } from '../database/db.generated.js';
 import { inTransaction, type Tx } from '../database/transaction.js';
 import { BookingTransitionService, type LockedBooking } from './booking-transition.service.js';
+import { BookingNotifier } from './booking-notifier.service.js';
 import { CapacityService } from './capacity.service.js';
 
 export interface Offer {
@@ -40,6 +41,7 @@ export class DispatchService {
     @Inject(DATABASE) private readonly db: Kysely<DB>,
     private readonly transitions: BookingTransitionService,
     private readonly capacity: CapacityService,
+    private readonly notifier: BookingNotifier,
   ) {}
 
   /** Payment captured (called by the payments module inside its transaction). */
@@ -56,6 +58,7 @@ export class DispatchService {
       .where('booking_id', '=', bookingId)
       .where('status', '=', 'RESERVED')
       .execute();
+    await this.notifier.toCustomer(tx, bookingId, 'BOOKING_CONFIRMED');
     return this.allocateAndOffer(tx, { ...booking, status: 'CONFIRMED' }, context);
   }
 
@@ -71,6 +74,7 @@ export class DispatchService {
     return inTransaction(this.db, context, async (tx) => {
       const booking = await this.transitions.lock(tx, bookingId);
       await this.transitions.apply(tx, booking, 'CONFIRM_WITHOUT_PREPAYMENT', context, { reason });
+      await this.notifier.toCustomer(tx, bookingId, 'BOOKING_CONFIRMED');
       return this.allocateAndOffer(tx, { ...booking, status: 'CONFIRMED' }, context);
     });
   }
@@ -93,6 +97,9 @@ export class DispatchService {
       const required = await this.workersRequired(tx, booking.serviceId);
       if (accepted >= required && booking.status === 'CONFIRMED') {
         await this.transitions.apply(tx, booking, 'WORKER_ACCEPTED', context);
+        await this.notifier.toCustomer(tx, booking.id, 'WORKER_ASSIGNED', {
+          dedupeSuffix: assignment.id,
+        });
       }
     });
   }
@@ -260,6 +267,10 @@ export class DispatchService {
         })
         .returning(['id', 'worker_id', 'crew_slot', 'offer_expires_at'])
         .executeTakeFirstOrThrow();
+      await this.notifier.toWorker(tx, booking.id, offer.worker_id, 'JOB_OFFER', {
+        dedupeSuffix: offer.id,
+        extra: { minutes: Math.max(1, Math.round(service.offer_timeout_seconds / 60)) },
+      });
       offers.push({
         assignmentId: offer.id,
         workerId: offer.worker_id,
@@ -268,6 +279,10 @@ export class DispatchService {
       });
     }
 
+    if (unfilled.length > 0) {
+      // Told once per booking; operations sees the booking in the unassigned queue.
+      await this.notifier.toCustomer(tx, booking.id, 'NO_WORKER_AVAILABLE');
+    }
     return { offers, unfilledCrewSlots: unfilled };
   }
 

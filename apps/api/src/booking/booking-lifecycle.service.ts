@@ -18,14 +18,22 @@ import type { ActionContext } from '../database/action-context.js';
 import { DATABASE } from '../database/database.module.js';
 import type { DB } from '../database/db.generated.js';
 import { asSystem, inTransaction, setEvent, type Tx } from '../database/transaction.js';
+import type { NotificationEvent } from '../notifications/events.js';
 import { validateScheduledStart } from './booking-schedule.js';
 import { BookingTransitionService, type LockedBooking } from './booking-transition.service.js';
+import { BookingNotifier } from './booking-notifier.service.js';
 import { CapacityService } from './capacity.service.js';
 import { DispatchService } from './dispatch.service.js';
 import { VerificationCodeService } from './verification-code.service.js';
 
 /** Field events a worker performs on their accepted job. */
 export type FieldEvent = 'START_TRAVEL' | 'MARK_ARRIVED' | 'COMPLETE_SERVICE' | 'CUSTOMER_NO_SHOW';
+
+const FIELD_EVENT_NOTIFICATIONS: Partial<Record<FieldEvent, NotificationEvent>> = {
+  START_TRAVEL: 'WORKER_EN_ROUTE',
+  MARK_ARRIVED: 'WORKER_ARRIVED',
+  COMPLETE_SERVICE: 'SERVICE_COMPLETED',
+};
 
 @Injectable()
 export class BookingLifecycleService {
@@ -36,16 +44,31 @@ export class BookingLifecycleService {
     private readonly capacity: CapacityService,
     private readonly dispatch: DispatchService,
     private readonly codes: VerificationCodeService,
+    private readonly notifier: BookingNotifier,
   ) {}
 
   /** Cancels a booking. The database releases its reservations and open offers. */
   async cancel(bookingId: string, reason: string, context: ActionContext): Promise<void> {
-    await inTransaction(this.db, context, async (tx) => {
-      const booking = await this.transitions.lock(tx, bookingId);
-      this.assertCustomerOwns(booking, context);
-      await this.transitions.apply(tx, booking, 'CANCEL', context, { reason });
-      await this.releasePromotion(tx, bookingId);
-    });
+    await inTransaction(this.db, context, (tx) => this.cancelInTx(tx, bookingId, reason, context));
+  }
+
+  /** Cancels inside the caller's transaction (so refunds can be created atomically). */
+  async cancelInTx(
+    tx: Tx,
+    bookingId: string,
+    reason: string,
+    context: ActionContext,
+  ): Promise<LockedBooking> {
+    const booking = await this.transitions.lock(tx, bookingId);
+    this.assertCustomerOwns(booking, context);
+    const workers = await this.notifier.activeWorkers(tx, bookingId);
+    await this.transitions.apply(tx, booking, 'CANCEL', context, { reason });
+    await this.releasePromotion(tx, bookingId);
+    await this.notifier.toCustomer(tx, bookingId, 'BOOKING_CANCELLED');
+    for (const workerId of workers) {
+      await this.notifier.toWorker(tx, bookingId, workerId, 'JOB_CANCELLED');
+    }
+    return booking;
   }
 
   /**
@@ -131,6 +154,9 @@ export class BookingLifecycleService {
         scheduledEnd: promise.end,
       };
       await this.reReserve(tx, moved, service, timing, context);
+      await this.notifier.toCustomer(tx, booking.id, 'BOOKING_RESCHEDULED', {
+        dedupeSuffix: promise.start.toISOString(),
+      });
       return { scheduledStart: promise.start, scheduledEnd: promise.end };
     });
   }
@@ -190,6 +216,8 @@ export class BookingLifecycleService {
       const status = await this.transitions.apply(tx, booking, event, context, {
         reason,
       });
+      const customerEvent = FIELD_EVENT_NOTIFICATIONS[event];
+      if (customerEvent) await this.notifier.toCustomer(tx, bookingId, customerEvent);
       if (event === 'COMPLETE_SERVICE') {
         await tx
           .updateTable('booking_assignment')
@@ -241,6 +269,7 @@ export class BookingLifecycleService {
         const status = await this.transitions.apply(tx, booking, 'START_SERVICE', context, {
           reason,
         });
+        await this.notifier.toCustomer(tx, bookingId, 'SERVICE_STARTED');
         return { status };
       },
     );
