@@ -1,226 +1,150 @@
-# One Tappe — UI/UX Screen Map (first page to full operations)
+# One Tappe — UI/UX Screen Map
 
-Status: **DRAFT v0.1 — for review**
-Companion to [`01-system-design.md`](01-system-design.md). Screen IDs (`C-`, `W-`, `O-`) are
-used in tickets, designs and tests so everyone refers to the same screen.
-
----
-
-## 1. Design principles
-
-These come straight from the playbook's rules and shape every screen.
-
-1. **Honest status, always visible.** Every booking shows its state in plain words. Before
-   confirmation the customer sees *"Not confirmed yet"*. Every ETA is labelled
-   *"Estimate"*. The original promised window is shown next to any new estimate (V18, A12).
-2. **Emergency is never behind a form.** Every customer and worker screen has a
-   persistent *"Emergency? Call 112 / 108"* link. The ops intake starts with the danger
-   question (V07, V15).
-3. **One job, one page.** In the console, everything about a job lives on one screen,
-   organised in the playbook's order: **Request → Promise → Delivery → Money →
-   Follow-up** (V28), with the event history alongside.
-4. **Only show what the role needs.** Workers see their job only; finance never sees care
-   notes; restricted panels show a lock and log access (V23).
-5. **Hindi-first for workers, bilingual for customers.** Big tap targets (≥48 px), icons
-   with labels, short sentences, works on slow 3G, keeps working offline and syncs.
-6. **Colour follows the PDF legend.** Green = proceed / handoff, amber = check / hold,
-   red = safety / exception. Never colour alone — always an icon + text too.
-7. **Accessible.** WCAG 2.2 AA contrast, screen-reader labels, phone fallback for anyone
-   who cannot use forms (A26).
+Status: **v0.2 — aligned with the approved V1 flows**. Screens are built after the API they
+depend on is stable (see `01-system-design.md` §9). Screen IDs are used in tickets, designs and
+tests. Every screen exists in **English and Hindi**.
 
 ---
 
-## 2. Customer Portal (mobile web, opened from WhatsApp/SMS link or website)
+## 1. Principles
+
+1. **Honest status.** The app shows the booking's real status and, when a time changed, both the
+   original and the new time.
+2. **Emergency is never behind a form.** "Emergency? Call 112" is reachable from every customer
+   and worker screen; the worker app has an SOS button that opens a safety incident.
+3. **Only what the role needs.** Workers see limited job details before accepting and the full
+   address only after; admin screens mask phone numbers and addresses unless the staff member
+   has the permission.
+4. **Mobile-first, low bandwidth.** Large tap targets, clear icons with labels, works on slow
+   networks; retries are safe (idempotency keys).
+5. **Accessible.** WCAG 2.2 AA contrast, screen-reader labels, status never shown by colour alone.
+
+---
+
+## 2. Customer app (Android / iOS)
 
 ```mermaid
 flowchart TD
-    C01[C-01 Home / service menu] --> C02[C-02 Check my area]
-    C02 -- not served --> C02b[C-02b Not yet here — join waitlist]
-    C02 -- served --> C03[C-03 Choose service]
-    C03 --> C04[C-04 Who is this for?]
-    C04 --> C05[C-05 Address & access]
-    C05 --> C06[C-06 Tasks & priorities]
-    C06 --> C07[C-07 Pick a time window]
-    C07 -- no window --> C07b[C-07b Later slot / waitlist]
-    C07 --> C08[C-08 Your contact + OTP]
-    C08 --> C09[C-09 Request received — not confirmed yet]
-    C09 -. dispatcher screens & quotes .-> C10[C-10 Review quote & accept]
-    C10 --> C11[C-11 Pay]
-    C11 --> C12[C-12 Booking tracker]
-    C12 --> C13[C-13 Worker has arrived — start code]
-    C13 --> C14[C-14 Review completed work]
-    C14 --> C15[C-15 Invoice & receipt]
-    C14 --> C16[C-16 Raise a concern]
-    C15 --> C17[C-17 Feedback]
-    C12 --> C18[C-18 Reschedule / cancel]
-    C01 --> C19[C-19 My bookings]
+    C01[C-01 Splash] --> C02[C-02 Phone number]
+    C02 --> C03[C-03 OTP verification]
+    C03 --> C04[C-04 Location permission]
+    C04 --> C05[C-05 Select / confirm location]
+    C05 -- not served --> C05b[C-05b Not in your area yet — notify me]
+    C05 --> C06[C-06 Name and address]
+    C06 --> C07[C-07 Home]
+    C07 --> C08[C-08 Category: House Help]
+    C08 --> C09[C-09 Service: HH60]
+    C09 --> C10[C-10 Task / service details]
+    C10 --> C11[C-11 Price]
+    C11 --> C12[C-12 Date & time or book now]
+    C12 --> C13[C-13 Address confirmation]
+    C13 --> C14[C-14 Availability check]
+    C14 -- no worker --> C14b[C-14b Choose another time]
+    C14 --> C15[C-15 Booking confirmation]
+    C15 --> C16[C-16 Payment]
+    C16 --> C17[C-17 Searching / assigning worker]
+    C17 --> C18[C-18 Worker assigned]
+    C18 --> C19[C-19 Worker details]
+    C19 --> C20[C-20 Worker en route]
+    C20 --> C21[C-21 Arrival verification — start code]
+    C21 --> C22[C-22 Service started]
+    C22 --> C23[C-23 Service timer]
+    C23 --> C24[C-24 Service completed]
+    C24 --> C25[C-25 Rating]
+    C25 --> C26[C-26 Invoice / receipt]
+    C26 --> C27[C-27 Support / complaint]
+    C15 & C17 & C18 --> C28[C-28 Cancel booking]
+    C28 --> C29[C-29 Refund status]
+    C15 & C17 & C18 --> C30[C-30 Reschedule]
 ```
 
-| ID | Screen | Key content | Rules shown in UI |
-|---|---|---|---|
-| C-01 | Home / service menu | Services available **in released zones only**, staffed hours, emergency banner, WhatsApp/call buttons | Only `GO` services listed; hours are the real staffed hours |
-| C-02 | Check my area | Pincode + locality picker or map pin | Unserved area → C-02b waitlist with permission |
-| C-03 | Choose service | Service cards: what's included, what's not, duration, price "from" | Exclusions visible before selection (A11) |
-| C-04 | Who is this for? | Myself / a family member; if family: recipient name, phone, relationship | Care services later add recipient consent step |
-| C-05 | Address & access | Map pin + house/flat + landmark; gate, lift, stairs, parking, pets | Pin **and** landmark required (A04) |
-| C-06 | Tasks & priorities | Drag-to-order task list for HH60 | "60 minutes covers the tasks in this order — not a whole-house guarantee" |
-| C-07 | Pick a time window | Only windows with real capacity; arrival window, not exact time | No slot → later date or waitlist; never "we'll try" |
-| C-08 | Contact + OTP | Phone, OTP, language, privacy notice summary | Service consent separate from marketing opt-in |
-| C-09 | Request received | Request ID, "We are checking… **This is not confirmed yet**", expected reply time | Emergency guidance repeated |
-| C-10 | Review quote & accept | Provider identity, tasks, duration, window, net + tax = **total**, extras basis, cancellation/refund, grievance contact, quote expiry; consent checkboxes; **Accept** | Acceptance records terms version + time (A11) |
-| C-11 | Pay | Payment link (UPI / card) if advance required | Never asks for PIN/OTP outside the provider page |
-| C-12 | Booking tracker | Status timeline, original window, current estimate (labelled), worker first name + company ID + photo, support call | Shows "next update by HH:MM" when uncertain |
-| C-13 | Start code | Large code to read out **only after** checking worker ID | "This is not a payment OTP" |
-| C-14 | Review completed work | Checklist with done / not done; agree or dispute; photos only with permission | Disagreement stays visible to support |
-| C-15 | Invoice & receipt | Downloadable invoice from the correct issuer | |
-| C-16 | Raise a concern | Category, what happened, desired remedy, contact preference | Safety option routes straight to urgent handling |
-| C-17 | Feedback | "Was the agreed service completed?" + rating | Rating never decides a worker's fate alone |
-| C-18 | Reschedule / cancel | Current policy shown before action; refund estimate | Pilot: no cancellation fee before dispatch (A22) |
-| C-19 | My bookings | Upcoming, past, open cases | |
+| ID   | Screen                 | API behind it (planned)                        | Notes                                                                           |
+| ---- | ---------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------- |
+| C-02 | Phone number           | `POST /v1/auth/otp`                            | +91 default; rate-limited.                                                      |
+| C-03 | OTP verification       | `POST /v1/auth/otp/verify`                     | Creates the account on first login; stores device for push.                     |
+| C-05 | Select location        | `GET /v1/serviceability?lat&lng&pincode`       | Uses city/zone/locality/radius from the database.                               |
+| C-07 | Home                   | `GET /v1/catalog?lat&lng`                      | Only services active in the resolved zone; names in the user's language.        |
+| C-10 | Task / service details | `GET /v1/services/{id}`                        | Tasks with defaults; customer reorders priorities.                              |
+| C-11 | Price                  | `POST /v1/quotes`                              | Full breakdown: base, charges, promo, GST, total.                               |
+| C-12 | Date & time / now      | `GET /v1/availability?service&date&address`    | Only times with a free verified worker are selectable.                          |
+| C-14 | Availability check     | part of `POST /v1/bookings`                    | The booking call itself holds the worker; `NO_AVAILABILITY` → C-14b.            |
+| C-15 | Booking confirmation   | `POST /v1/bookings`                            | Sends expected total + idempotency key; shows "pay within 10 minutes".          |
+| C-16 | Payment                | `POST /v1/bookings/{id}/payment` → gateway SDK | Confirmation comes from the verified gateway webhook, not from the app.         |
+| C-17 | Assigning worker       | `GET /v1/bookings/{id}` + push                 | Shows progress; if no worker accepts, the customer is told and offered options. |
+| C-19 | Worker details         | `GET /v1/bookings/{id}`                        | First name, photo, worker code, verification badge; no personal address.        |
+| C-20 | En route               | booking status + worker location (duty-only)   | ETA labelled as an estimate.                                                    |
+| C-21 | Arrival verification   | `GET /v1/bookings/{id}/start-code`             | "Share this code only after checking the worker's ID. It is not a payment OTP." |
+| C-23 | Service timer          | booking status                                 | Counts from the recorded start.                                                 |
+| C-25 | Rating                 | `POST /v1/bookings/{id}/rating`                | 1–5 and comment; a low rating opens a follow-up, never an automatic penalty.    |
+| C-26 | Invoice                | `GET /v1/bookings/{id}/invoice`                | PDF from the correct issuing entity.                                            |
+| C-27 | Support                | `POST /v1/support-cases`                       | Category, description, desired resolution; safety concerns go to safety.        |
+| C-28 | Cancel                 | `POST /v1/bookings/{id}/cancel`                | Shows the refund outcome before confirming.                                     |
+| C-30 | Reschedule             | `POST /v1/bookings/{id}/reschedule`            | Shows original and new time; the original promise is kept on record.            |
 
 ---
 
-## 3. Worker App (PWA, Hindi / English)
+## 3. Worker app (Android; PWA acceptable for the pilot)
 
 ```mermaid
 flowchart TD
-    W01[W-01 Login OTP] --> W02[W-02 Start shift — readiness check]
-    W02 --> W03[W-03 Today]
-    W03 --> W04[W-04 New offer — accept in 3:00]
-    W04 -- accept --> W05[W-05 Job brief]
-    W05 --> W06[W-06 I'm leaving]
-    W06 --> W07[W-07 I've arrived — enter start code]
-    W07 --> W08[W-08 Walk-through]
-    W08 --> W09[W-09 Working — checklist + timer]
-    W09 --> W10[W-10 Extra task request]
-    W09 --> W11[W-11 Finish — review with customer]
-    W11 --> W12[W-12 Safe exit]
-    W12 --> W03
-    W03 --> W13[W-13 My earnings]
-    W03 --> W14[W-14 End shift]
-    SOS[W-99 SOS / Stop work — on every screen]
+    W01[W-01 Registration] --> W02[W-02 Phone OTP]
+    W02 --> W03[W-03 Personal information]
+    W03 --> W04[W-04 Address]
+    W04 --> W05[W-05 Verification / KYC]
+    W05 --> W06[W-06 Training status]
+    W06 --> W07[W-07 Awaiting approval]
+    W07 --> W08[W-08 Home — online / offline]
+    W08 --> W09[W-09 Job request — limited details, countdown]
+    W09 -- reject --> W08
+    W09 -- accept --> W10[W-10 Job details — full permitted info]
+    W10 --> W11[W-11 Navigation]
+    W11 --> W12[W-12 Arrived]
+    W12 --> W13[W-13 Enter customer's start code]
+    W13 --> W14[W-14 Job timer + task checklist]
+    W14 --> W15[W-15 Complete job]
+    W15 --> W16[W-16 Customer confirmation]
+    W16 --> W08
+    W08 --> W17[W-17 Earnings & job history]
+    SOS[W-99 SOS / stop unsafe work — on every screen]
 ```
 
-| ID | Screen | Key content | Rules |
-|---|---|---|---|
-| W-01 | Login | Phone + OTP on registered device | Inactive/restricted worker sees why and whom to call |
-| W-02 | Start shift | Fit for work? Phone charged? Uniform & ID? Kit? | Answers logged; "No" alerts desk, not a penalty |
-| W-03 | Today | Timeline of accepted jobs, next job highlighted, offline indicator | Only own jobs |
-| W-04 | New offer | Service, area (not full address yet), time block, tasks, **pay**, travel time, countdown | Accept / Decline with reason; address revealed after accept |
-| W-05 | Job brief | Address + landmark + map, access notes, task order, hazards, customer first name, desk number | Only the information the job needs |
-| W-06 | Leaving | "I'm leaving now" → ETA | Sends departure event |
-| W-07 | Arrived | Show your company ID → ask customer for start code (or desk confirms by call) | Never ask for a payment OTP |
-| W-08 | Walk-through | Confirm task order, surfaces, products, pets secured, safe exit, pre-existing damage | Photos only with customer permission |
-| W-09 | Working | Checklist ticks, elapsed/remaining time, periodic check-in prompt | Check-in overdue triggers desk call |
-| W-10 | Extra task | Describe extra task + minutes → sent to desk and customer for approval | Cannot start until approved; next job protected |
-| W-11 | Finish | Checklist review with customer: agree / dispute; items & keys returned; taps & chemicals secured | End time recorded |
-| W-12 | Safe exit | "I have left safely" | Ends duty location sharing |
-| W-13 | Earnings | Per-job pay, travel, waiting, incentives, deductions with reasons, payout dates | Written rate card link |
-| W-14 | End shift | Summary; any open issues | |
-| W-99 | **SOS / Stop work** | One big red button: *I'm in danger* (calls desk + 112 guidance) or *Stop unsafe work* (reason list: abuse, live wiring, unsafe ladder, aggressive animal, out-of-scope care…) | Always one tap away; works offline via phone call |
+| ID   | Screen             | Rules                                                                                                                                    |
+| ---- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| W-05 | Verification / KYC | Uploads go to the restricted vault; the worker sees status per item (pending, verified, rejected + reason). No Aadhaar number is stored. |
+| W-07 | Awaiting approval  | Worker can only go online after approval, required verifications and training.                                                           |
+| W-09 | Job request        | Service, locality (not full address), time, duration, payout, travel estimate; countdown from the offer expiry.                          |
+| W-10 | Job details        | Full address and customer first name only after acceptance; access notes; tasks in priority order.                                       |
+| W-13 | Start code         | Five wrong attempts lock the job and alert operations.                                                                                   |
+| W-17 | Earnings           | Per-job pay, travel, incentives, adjustments with reasons, payout status.                                                                |
+| W-99 | SOS                | Creates a CRITICAL safety incident with location; operations and safety are alerted immediately.                                         |
 
 ---
 
-## 4. Operations Console (desktop)
+## 4. Admin / operations panel (Next.js, desktop-first)
 
-### 4.1 Navigation
-
-```
-┌───────────────────────────────────────────────────────────────────────────┐
-│ ONE TAPPE · Bokaro · Zone: Sector 4 ▾   Desk open 08:00–18:00  [Shift ▾]  │
-├──────────────┬────────────────────────────────────────────────────────────┤
-│ ▣ Control    │                                                            │
-│ ＋ New intake │                                                            │
-│ ☰ Jobs       │                  (page content)                            │
-│ ◷ Schedule   │                                                            │
-│ ☺ Customers  │                                                            │
-│ ⚒ Workers    │                                                            │
-│ ! Cases      │                                                            │
-│ ⚠ Incidents  │  (Safety / City Lead only)                                 │
-│ ₹ Finance    │  (Finance / City Lead only)                                │
-│ ◎ Setup      │  zones · services · prices · terms · release · users       │
-│ ▤ Reports    │                                                            │
-└──────────────┴────────────────────────────────────────────────────────────┘
-```
-
-### 4.2 Screens
-
-| ID | Screen | Key content | Roles |
-|---|---|---|---|
-| O-01 | Login + MFA | Email/phone + password + authenticator code | All staff |
-| O-02 | **Desk shift open** | Checklist: staff & relief present, roster/credential expiry, kit, partner availability, emergency directory, first visits | Duty lead |
-| O-03 | **Control board** | Queue columns from V22: **Unassigned · Offer pending · Late risk · In service · Overdue check-in · Handover pending · Refund pending · Open incidents**; each card shows job code, owner, timer; stop-sell toggles | Dispatch, City Lead |
-| O-04 | **New intake** | Step 1: *Is anyone in danger or is this a health emergency?* (Yes → emergency panel with 112/108 script, log facts). Step 2: caller, callback, channel. Step 3: service, zone check, address pin + landmark. Step 4: payer / recipient / contact. Step 5: need & requested time. → creates **NEW**, then **SCREENED** | Dispatch |
-| O-05 | **Job page** | Header: job code, state chip, owner, original window, current estimate. Tabs: **A Request · B Promise · C Delivery · D Money · E Follow-up** + right-side **event timeline** and "next action" button driven by the state machine | Role-filtered |
-| O-06 | Quote builder | Price version auto-picked, extras, tax, total, terms version, expiry; preview of the exact customer message; send via WhatsApp link / SMS | Dispatch |
-| O-07 | **Assign worker** | Eligible workers list (why others are excluded is shown: expired check, restriction, off-shift, overlap), travel estimate, load; **Send offer** with countdown; auto-next on expiry | Dispatch |
-| O-08 | Schedule | Worker × time grid for the day/week; reservations, shifts, 80% cap line, free windows; drag not allowed to bypass rules | Dispatch, City Lead |
-| O-09 | Customer profile | Persons, addresses, consents (with versions & withdrawal), bookings, cases | Dispatch (no restricted docs) |
-| O-10 | Worker roster | List with status, permitted services, zones, next expiry | Safety, City Lead |
-| O-11 | Worker profile & activation | 7-step activation checklist (A09) with evidence status + expiry; permissions; restrictions with review dates; shifts; earnings; restricted vault panel | Safety (restricted parts) |
-| O-12 | Cases | Case list & detail: owner, severity, remedy, next update, appeal | Support, City Lead |
-| O-13 | Incidents | Severity triage, first-15-minutes checklist (A21), commander, restricted narrative, actions, review & independent closure | Safety, City Lead, Founder |
-| O-14 | Refunds | Request → independent approval → initiation → settlement tracking | Support requests, Finance/City Lead approve |
-| O-15 | Payments & invoices | Payment status per booking, invoice issue, credit notes | Finance |
-| O-16 | Daily reconciliation | Jobs ↔ invoices ↔ provider ↔ bank ↔ dues ↔ refunds; discrepancy list; second-person sign-off | Finance |
-| O-17 | Worker payouts | Earning lines, batch, approval, proof | Finance |
-| O-18 | Setup: zones | Zone draft → survey evidence → release with date & supervisor | City Lead |
-| O-19 | Setup: services, prices, terms | SKU definitions, price versions, terms versions | Founder, City Lead |
-| O-20 | Setup: service release register | GO/HOLD per service × zone × hours × capacity with conditions, approvers, review date | Founder + City Lead + Safety |
-| O-21 | Setup: users & roles | Staff accounts, roles, MFA status, deactivate | Tech admin |
-| O-22 | Reports / metrics | Fulfilment ≥95%, on-time ≥90% (original window), worker no-show <2%, current checks 100%, on-time earned pay 100%, complaints ≤5%, contribution per service — with numerators & denominators visible | City Lead, Founder |
-| O-23 | Desk shift close & handover | Every worker accounted for, money reconciled, open jobs/cases handed to named owner with next update | Duty lead |
-| O-24 | Audit log | Who did/viewed what, filterable | Founder, Tech admin |
-| O-25 | Manual backfill | Enter events recorded on paper during an outage with original times | Dispatch + reviewer |
-
-### 4.3 Job page wireframe (O-05)
-
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ OT-BKR-000123 · HH60 House help · ● CONFIRMED            Owner: Priya (Desk) │
-│ Original window: Tue 24 Sep, 10:00–10:30   Estimate: —   Next update: 09:30  │
-│ [ Assign worker ▸ ]   [ Send message ▾ ]   [ Hold ]  [ Reschedule ]  [ Cancel ]│
-├───────────────────────────────────────────────────────┬──────────────────────┤
-│ A Request | B Promise | C Delivery | D Money | E Follow-up │ EVENT TIMELINE    │
-│───────────────────────────────────────────────────────│ 09:02 NEW  (Priya)   │
-│ Payer:      R. Kumar  · 98xxxxxx12 · Hindi            │ 09:05 SCREENED       │
-│ Recipient:  same as payer                             │ 09:09 QUOTED v1      │
-│ Address:    Flat 3B, Sector 4, near ___ · pin ✓        │ 09:21 Accepted (link)│
-│ Access:     Gate pass needed · Lift ✓ · Dog (secured) │ 09:21 CONFIRMED      │
-│ Tasks:      1 Kitchen dishes 2 Mop living 3 Sweep ... │   slot locked ✓      │
-│ Channel:    WhatsApp                                  │                      │
-│ Flags:      none                                      │ [ + Add note ]       │
-└───────────────────────────────────────────────────────┴──────────────────────┘
-```
+| Module                    | Main screens                                                                                                                  | Permission(s)                            |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| Live board                | Bookings by status, unassigned, offers about to expire, late arrivals, open incidents                                         | `booking.read`                           |
+| Bookings                  | List, detail (status history, schedule changes, price lines, assignments), manual booking, reassign, cancel, reschedule, hold | `booking.*`                              |
+| Customers                 | List (masked), profile, addresses, bookings, cases                                                                            | `customer.read`, `customer.read_contact` |
+| Workers                   | List, profile, status, service permissions, restrictions, shifts, earnings                                                    | `worker.*`, `availability.manage`        |
+| Worker verification       | Queue, document viewer, approve / reject with reason                                                                          | `worker_verification.*`                  |
+| Services & categories     | Categories, services, options, tasks, requirements, per-zone activation                                                       | `catalog.manage`                         |
+| Service areas             | Cities, zones (map + radius), localities, pincodes, activate / deactivate                                                     | `service_area.manage`                    |
+| Pricing                   | Price rules, charges, tax rates, payout rules — with a "what would this cost?" preview                                        | `pricing.manage`                         |
+| Promotions                | Codes, limits, scope, redemptions                                                                                             | `promotion.manage`                       |
+| Payments & refunds        | Payments, gateway events, refund requests, second-person approval                                                             | `payment.read`, `refund.*`               |
+| Worker earnings & payouts | Earnings, payout batches, approval                                                                                            | `payout.*`                               |
+| Support                   | Case queue, SLA timers, conversation, resolution                                                                              | `support.*`                              |
+| Safety                    | Incident queue by severity, commander, actions, independent closure                                                           | `safety.*`                               |
+| Audit log                 | Filter by entity, actor, date; before/after view                                                                              | `audit.read`                             |
+| Users & roles             | Staff accounts, roles (optionally per city), MFA status                                                                       | `user.manage`                            |
 
 ---
 
-## 5. End-to-end walk-through (HH60, happy path)
+## 5. Design deliverables (after the API endpoints)
 
-| Step | Customer | Dispatch (console) | Worker (app) | System |
-|---|---|---|---|---|
-| 1 | Messages on WhatsApp or uses C-01…C-09 | O-04 intake / reviews portal request | — | NEW → SCREENED, template #1 |
-| 2 | — | O-06 quote, sends link | — | QUOTED, tentative hold |
-| 3 | C-10 accepts, C-11 pays | sees acceptance on O-03 | — | CONFIRMED, slot LOCKED, template #3 |
-| 4 | — | O-07 sends offer | W-04 accepts | ASSIGNED, address released to worker |
-| 5 | C-12 sees worker ID | watches O-03 | W-06 leaving | EN_ROUTE, estimate labelled |
-| 6 | C-13 reads start code | — | W-07 enters code, W-08 walk-through | ARRIVED → IN_SERVICE |
-| 7 | — | approves any W-10 extra | W-09 works | check-ins logged |
-| 8 | C-14 agrees | — | W-11 finish, W-12 safe exit | COMPLETED, template #6, earnings line |
-| 9 | C-15 invoice | O-16 reconciliation | W-13 sees pay | SETTLED |
-| 10 | C-17 feedback | follow-up logged | — | CLOSED |
-
-Exception paths (no worker, delay, no-show, stop-work, complaint, refund, incident,
-outage) each get their own flow page in the design file once the screens above are
-approved.
-
----
-
-## 6. Design deliverables planned
-
-1. **Design tokens** — colours (brand + status), type scale, spacing, radius; light & dark.
-2. **Component library** — buttons, state chips, timers, timeline, checklist, form fields,
-   money display (₹ with tax breakdown), emergency banner, SOS button.
-3. **Clickable prototype** of the HH60 path across all three apps.
-4. **Exception flows** — the rehearsal cases in A36.
-5. **Copy deck** in English and Hindi for every template and screen.
+1. Design tokens (brand colours, type, spacing), light and dark.
+2. Component library shared by the admin panel (web) and, as specifications, by the mobile apps.
+3. Clickable prototype of the HH60 path across the three apps.
+4. English and Hindi copy deck for every screen, notification and error code.

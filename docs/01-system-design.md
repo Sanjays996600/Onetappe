@@ -1,474 +1,310 @@
-# One Tappe — System Design (Bokaro Pilot)
+# One Tappe — System Design
 
-Status: **DRAFT v0.1 — for review before any code is written**
-Source: *One Tappe / Bokaro Pilot — Start Here (Visual Edition, 22 Sep 2026)* and its
-appendix *Bokaro Operating Playbook v1.0*. Page references below use the PDF's own
-labels: `V01–V28` (visual guide) and `A01–A43` (appendix).
+Status: **v0.2 — core booking engine implemented**
+Launch: **Noida**, first live service **HH60 (House Help, 60 minutes)**.
+Operating rules come from the pilot playbook (_One Tappe Pilot — Start Here_, 22 Sep 2026);
+page references like `V09` / `A13` point into that PDF.
 
 ---
 
-## 1. What we are building
+## 1. Decisions
 
-A **controlled job register** with three front-ends, built around one rule from the
-playbook (A02):
-
-> Every accepted job has **one owner, one confirmed scope, one capacity reservation,
-> one check-in/out record and one settlement record.**
-
-WhatsApp and phone stay the *conversation* channels. The system is the *operational
-record* (V22, A07). A chat screenshot can never be the only record of an accepted job.
-
-| Front-end | Who uses it | Device | Purpose |
-|---|---|---|---|
-| **Operations Console** | Dispatch/Support, City Lead, Safety Officer, Finance, Founder | Desktop / laptop (company device) | Intake → quote → reserve → assign → monitor → settle → close. The heart of the pilot. |
-| **Worker App** (PWA) | Helpers, attendants, crew leads | Android phone, Hindi-first, poor network | Accept offers, job brief, check-in/out, start code, checklist, scope change, SOS/stop-work, earnings. |
-| **Customer Portal** | Payer, recipient, authorised contact | Any phone browser, opened from a WhatsApp/SMS link | Enquiry, quote review + acceptance + consent, payment, booking tracker, start code, completion review, concerns. |
-
-### 1.1 Release phases (follows the rollout on V27 / A35)
-
-| Phase | Services | Why this order |
-|---|---|---|
-| **Phase 1 — Pilot core** | `HH60` house help only | The playbook opens house help first (days 12–14). Every shared module (booking, dispatch, money, cases) is proven on the simplest service. |
-| **Phase 2 — Care & crews** | `PC120` companion, `HE240` hospital escort, `DC-S` deep cleaning, `SUB26` subscription | Each needs extra records (consent roles, care brief, handover, survey, crew reservation, visit ledger). Each opens behind its own GO/HOLD gate. |
-| **Phase 3 — Ambulance coordination** | `AMB` | Needs partner/vehicle/shift readiness records and the Form D timeline. Hold until the legal/clinical gates close (A40). |
-
-Nothing in Phase 2/3 is thrown away work: the data model below already has the
-places those services plug into.
+| #   | Decision                                                                                                                                                      | Consequence in the code                                                                                                                                      |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| D1  | Customers self-book in the app from day 1. Operations can also book on a customer's behalf.                                                                   | `booking.source` is `CUSTOMER_APP` or `ADMIN`; `created_by_user_id` records the staff member.                                                                |
+| D2  | WhatsApp and phone are support channels, not the booking system.                                                                                              | No booking state lives in chat; messages are sent from the notification module.                                                                              |
+| D3  | Services are data. HH60 is simply the first row switched on.                                                                                                  | `service_category`, `service`, `service_option`, `service_task`, `service_zone`, verification and training requirements.                                     |
+| D4  | Areas are data: city → zone → locality → pincode, plus a zone service radius. Noida is not in the code.                                                       | `serviceable_locality` view + `ServiceabilityService`.                                                                                                       |
+| D5  | Prices are rules: service, option, city, zone, weekday, time of day, tax, charges, promo codes. Worker payout rules are separate.                             | `price_rule`, `charge_rule`, `tax_rate`, `promotion`, `payout_rule`; arithmetic in `@onetappe/domain`.                                                       |
+| D6  | Modular monolith: one NestJS API, one PostgreSQL database.                                                                                                    | `apps/api` with feature modules.                                                                                                                             |
+| D7  | The API is independent of any frontend so native Android/iOS apps, a PWA and the Next.js admin panel all use the same endpoints.                              | Versioned REST under `/v1`; auth, errors and money formats are client-neutral (see §8).                                                                      |
+| D8  | **The database is the final authority** on availability, status changes and history. Frontend and service checks are for good error messages only.            | Exclusion constraints, triggers and append-only tables (see §5–§6). Verified by tests that bypass the application.                                           |
+| D9  | English and Hindi from the start; more Indian languages without code changes.                                                                                 | `locale` table, `translation` table, per-locale notification templates, `app_user.preferred_locale`.                                                         |
+| D10 | Production accounts (cloud, database, payment gateway, SMS, WhatsApp, maps, push, email, monitoring) belong to the company. Developers get role-based access. | Secrets come from environment/secret manager only; nothing in the repository.                                                                                |
+| D11 | SQL-first migrations (plain `.sql` files) with typed queries via Kysely instead of an ORM.                                                                    | We rely on PostgreSQL features ORMs do not model (exclusion constraints, range types, triggers). Types are generated from the live schema and checked in CI. |
 
 ---
 
 ## 2. Architecture
 
-The playbook says: *"Use a single controlled backend and database before adding
-architectural complexity. Enforce permissions server-side."* (A25). So the design is a
-**modular monolith**: one API process, one PostgreSQL database, clearly separated
-modules inside.
-
 ```mermaid
 flowchart LR
     subgraph Clients
-        C[Customer Portal<br/>mobile web]
-        W[Worker App<br/>PWA, Hindi/English]
-        O[Operations Console<br/>desktop web]
+        CA[Customer app<br/>Android / iOS]
+        WA[Worker app<br/>Android · PWA for pilot]
+        AD[Admin panel<br/>Next.js]
     end
 
-    subgraph API["API — modular monolith"]
+    subgraph API["NestJS API (/v1) — modular monolith"]
         AUTH[Auth + RBAC]
-        CAT[Catalog / Zones / Release]
-        PPL[Parties + Consent]
-        WRK[Workforce + Eligibility]
-        BKG[Booking + State machine]
-        DSP[Capacity + Dispatch]
-        FLD[Field events]
-        MSG[Messaging]
-        PAY[Payments / Invoices / Refunds / Payouts]
-        CASE[Cases + Incidents]
-        RPT[Control board + Metrics]
-        AUD[Audit log]
+        CAT[Catalog]
+        AREA[Service areas]
+        PRICE[Pricing]
+        PPL[Customers · Workers · Verification]
+        AVAIL[Availability]
+        BKG[Booking engine<br/>creation · capacity · dispatch · lifecycle]
+        PAY[Payments · Refunds · Payouts]
+        NOTIF[Notifications]
+        SUP[Support · Safety]
+        AUD[Audit]
     end
 
-    JOBS[[Job scheduler<br/>timers & alerts]]
-    DB[(PostgreSQL)]
-    VAULT[(Encrypted object storage<br/>restricted vault)]
-    PG[Payment provider]
-    WA[WhatsApp / SMS provider]
+    DB[(PostgreSQL 16<br/>final authority)]
+    VAULT[(Encrypted object storage<br/>worker documents)]
+    EXT[Payment gateway · SMS/OTP · WhatsApp<br/>Maps · Push · Email]
 
-    C --> API
-    W --> API
-    O --> API
+    CA & WA & AD --> API
     API --> DB
     API --> VAULT
-    JOBS --> DB
-    PG -- signed webhooks --> PAY
-    PAY --> PG
-    MSG --> WA
+    API <--> EXT
 ```
 
-### 2.1 Recommended stack (to be confirmed — see open questions)
-
-| Layer | Choice | Reason |
-|---|---|---|
-| Language | **TypeScript** everywhere | One language for API, web and shared domain rules (state machine, validation). |
-| API | **NestJS** (Node 22 LTS) | Module boundaries, dependency injection, guards for RBAC, well-known structure for a team to maintain. |
-| Database | **PostgreSQL 16** | Transactions, `EXCLUDE` constraints to make double-booking impossible at the database level, row-level security as a second line of defence, append-only triggers. |
-| ORM / migrations | **Prisma** + hand-written SQL migrations for constraints/triggers | Typed queries; SQL where Prisma cannot express the guarantee. |
-| Background jobs | **pg-boss** (queue inside Postgres) | Offer timers, alerts and reminders without adding Redis in the pilot. |
-| Web apps | **Next.js** (React) — one app, three route areas: `/` customer, `/w` worker, `/ops` console | Shared design system; server rendering for customer links; PWA for workers. |
-| UI kit | Tailwind CSS + Radix UI primitives, own design tokens | Accessible components, consistent theming, no heavy vendor lock-in. |
-| i18n | `next-intl`, Hindi + English from day one | Worker instructions must be in a language they understand (A03, A09). |
-| Validation | **Zod** schemas in a shared package | Same rules in browser and server. |
-| Testing | Vitest (unit), Testcontainers Postgres (integration), Playwright (end-to-end) | Acceptance checks from A25 become automated tests. |
-| Hosting | India region (e.g. AWS `ap-south-1` Mumbai) | Data residency expectations; CERT-In ICT logs retained 180 days in India (A26). |
-| Files | S3-compatible storage, server-side encryption, signed short-lived URLs | Restricted vault for ID/consent/incident evidence (V22). |
-
-### 2.2 Repository layout (proposed)
+### Repository layout
 
 ```
-onetappe/
-├─ apps/
-│  ├─ api/              NestJS API (modules listed in §4)
-│  └─ web/              Next.js: customer (/), worker (/w), ops console (/ops)
-├─ packages/
-│  ├─ domain/           state machine, enums, pricing/capacity maths, Zod schemas
-│  ├─ ui/               design tokens + shared components
-│  └─ config/           tsconfig, eslint, prettier presets
-├─ infra/               docker-compose for local dev; IaC later
-├─ docs/                this design, screen map, ADRs, runbooks
-└─ .github/workflows/   CI: lint, typecheck, test, build
+apps/api/                 NestJS API
+  migrations/             0001…0010 forward-only SQL migrations
+  src/database/           connection, transactions with action context, error mapping, generated types
+  src/booking/            booking engine
+  src/pricing/            rule loading → @onetappe/domain arithmetic
+  src/service-area/       serviceability
+  test/                   integration tests against a real PostgreSQL
+packages/domain/          framework-free rules shared by every client
+  booking/                statuses and the state machine
+  pricing/                rule selection, quote calculation
+  capacity/               reservation periods, daily capacity maths
+  money/, time/           paise arithmetic, India-time helpers
+docs/                     this design, screen map, open items
+infra/                    local docker-compose
+.github/workflows/ci.yml  format, lint, typecheck, build, migrate, codegen check, tests
 ```
 
 ---
 
-## 3. Roles and permissions
+## 3. Roles and data access
 
-Roles come from V04 / A08; data boundaries from V23 / A25. Permissions are enforced in
-the API (guards + query scoping), with PostgreSQL row-level security as a second layer
-on the most sensitive tables.
+Seeded in migration `0003`. Roles can be scoped to one city (`user_role.city_id`).
 
-| Role | Can do | Must NOT see / do |
-|---|---|---|
-| `FOUNDER` | Budget, service scope, GO/HOLD approvals, management reports, logged exceptional access | Waive a safety stop or expired credential; routine PII exports |
-| `CITY_LEAD` | Live queue, capacity, stop-sell, remedies, replacements, shift handover, approve refunds up to a limit | Approve own requests |
-| `DISPATCHER` (Dispatch/Support) | Intake, quote, reserve, offer/assign, check-ins, customer updates, own cases | Full ID scans, unrelated health history, bank details |
-| `SAFETY_OFFICER` | Worker verification, restrictions, incidents, care brief review | Accounting data beyond the case |
-| `FINANCE` | Invoices, payments, reconciliation, payouts, refund initiation | Care narratives, medical reports, incident narratives |
-| `WORKER` | Own offers and assigned jobs only, necessary address/access, own earnings | Other customers, other workers, bulk export |
-| `TECH_ADMIN` | User accounts, configuration, backups | Business data except through logged break-glass |
+| Role                   | Typical permissions                                                                               |
+| ---------------------- | ------------------------------------------------------------------------------------------------- |
+| `CUSTOMER`, `WORKER`   | Their own data only (enforced in services).                                                       |
+| `SUPER_ADMIN`          | Users, roles, configuration, audit log.                                                           |
+| `FOUNDER`              | Reporting, catalog/pricing/areas, approvals.                                                      |
+| `CITY_MANAGER`         | Live operations for a city: bookings, assignment, overrides, refunds approval, worker management. |
+| `OPERATIONS_AGENT`     | Manual bookings, dispatch, shifts, cancellations.                                                 |
+| `SUPPORT_AGENT`        | Support cases, refund requests, masked customer view.                                             |
+| `VERIFICATION_OFFICER` | Worker documents and verification decisions.                                                      |
+| `SAFETY_OFFICER`       | Safety incidents, worker restrictions.                                                            |
+| `FINANCE`              | Payments, refunds, invoices, payouts, worker bank details.                                        |
+| `MARKETING`            | Promotions.                                                                                       |
 
-**Separation-of-duties rules enforced in code and database:**
-- Refund: `approved_by ≠ requested_by` (A08, V20).
-- Worker bank-detail change: `approved_by ≠ changed_by`.
-- Lifting a worker restriction: reviewer ≠ the person who imposed it; must reference evidence.
-- Closing a critical/high incident: independent approver.
+**Masking.** Permissions marked `is_sensitive` (e.g. `customer.read_contact`,
+`worker_verification.read`, `safety.read`) unlock full phone numbers, addresses, documents and
+incident narratives. Without them the API returns masked values (`+91 98xxx xx012`). Access to
+sensitive records is written to `audit_log` with action `READ`.
 
-Every read of restricted data (vault files, care brief, incident narrative) writes an
-audit record.
+**Separation of duties enforced by the database:** nobody approves their own refund, payout,
+worker bank change, verification or worker restriction lift; serious safety incidents are closed
+by someone other than the incident commander.
 
 ---
 
-## 4. Modules and responsibilities
+## 4. Data model
 
-| Module | Owns | Key rules |
-|---|---|---|
-| **auth** | Staff login (password + TOTP MFA), worker/customer phone OTP, sessions, device registration | No shared accounts; access removed on exit (A26) |
-| **catalog** | Service SKUs, task lists, price versions, tax lines, terms versions | Prices and terms are versioned; a quote references exact versions |
-| **coverage** | Cities, zones (polygon / approved streets / pincodes), zone hours, route buffer, exclusions | A zone is `DRAFT` until released with a date and supervisor (V05) |
-| **release** | Service release register: service × zone × hours × capacity → `GO` / `HOLD`, conditions, approvers, review date | No booking can be confirmed for a service/zone that is not `GO` (V24, A40) |
-| **parties** | Persons, customer accounts, addresses, roles on a job (payer / recipient / authorised contact / backup) | Payer and recipient are separate records (V11) |
-| **consent** | Consent records: purpose, terms version, time, method, withdrawal | Service consent separate from marketing; withdrawal is practical (A30) |
-| **workforce** | Workers, activation checks with expiry, service × zone permissions, restrictions, shifts, rate card | Expired check or active restriction blocks assignment (A25) |
-| **booking** | Enquiries, bookings, jobs, quotes, the job state machine, append-only job events | Original promised window never overwritten (A12) |
-| **capacity** | Slot inventory, reservations, 80% bookable cap, stop-sell flags | Overlapping reservations impossible (DB constraint) |
-| **dispatch** | Offers with expiry, acceptance, assignment, reassignment | One active assignment per job; one pending offer per worker-slot |
-| **field** | Departure/arrival/start/end/safe-exit events, start code, checklist, scope changes, SOS | Events carry `occurred_at` (device time) and `recorded_at` (server time) for offline sync |
-| **messaging** | Template library (V18), rendered messages per job, "next update due" timer | Estimates labelled as estimates; payment OTP never used as a start code |
-| **payments** | Payment links, provider webhooks, invoices, credit notes, refunds, worker earnings & payouts, daily reconciliation | Webhook signature verified; provider event IDs unique (dedup); no stored-value wallet (A23) |
-| **cases** | Complaints / support cases, remedies, appeals | One case, one owner, next-update time (V20) |
-| **incidents** | Safety incidents (CRITICAL / HIGH / ROUTINE), actions, restricted narrative, review | Danger bypasses every queue; closure needs independent approval (V19) |
-| **ops** | Shift open/close checklists, control board queries, metrics | Metrics never change denominators silently (V26) |
-| **audit** | Immutable audit log of writes and sensitive reads | Retained ≥180 days in India |
+70 tables across ten migrations. Money is integer **paise**; rates are **basis points**; all
+instants are UTC `timestamptz`, shown in the city's time zone.
+
+| Migration                           | Tables                                                                                                                                                                                                                                                                                      |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0001_foundation`                   | `audit_log`, `locale`, `translation`; action-context functions; protective trigger functions                                                                                                                                                                                                |
+| `0002_service_areas`                | `city`, `zone`, `pincode`, `locality`; `serviceable_locality` view; `distance_m()`                                                                                                                                                                                                          |
+| `0003_identity_access`              | `app_user`, `role`, `permission`, `role_permission`, `user_role`, `staff_credential`, `otp_challenge`, `auth_session`, `user_device`, `legal_document`, `consent_record`                                                                                                                    |
+| `0004_catalog_pricing`              | `service_category`, `service`, `service_option`, `service_task`, `service_zone`, `tax_rate`, `price_rule`, `charge_rule`, `promotion`, `promotion_service`, `promotion_city`, `payout_rule`                                                                                                 |
+| `0005_customers_workers`            | `customer_profile`, `address`, `worker_profile`, `worker_verification`, `service_verification_requirement`, `training_module`, `service_training_requirement`, `worker_training`, `worker_service_permission`, `worker_restriction`, `worker_bank_account`; `worker_ineligibility_reason()` |
+| `0006_availability`                 | `worker_shift`, `worker_presence`, `worker_presence_event`                                                                                                                                                                                                                                  |
+| `0007_bookings`                     | `booking_status_transition`, `booking`, `booking_status_history`, `booking_schedule_change`, `booking_price_line`, `booking_task`, `booking_verification_code`, `booking_rating`, `worker_reservation`, `booking_assignment`                                                                |
+| `0008_payments`                     | `payment`, `payment_event`, `refund`, `invoice_sequence`, `invoice`, `credit_note`, `worker_payout`, `worker_earning`                                                                                                                                                                       |
+| `0009_notifications_support_safety` | `promotion_redemption`, `notification_template`, `notification`, `support_case`, `support_case_event`, `safety_incident`, `safety_incident_event`                                                                                                                                           |
+| `0010_truncate_guards`              | Statement-level guards: `TRUNCATE` is refused on history and financial tables                                                                                                                                                                                                               |
 
 ---
 
 ## 5. Booking lifecycle
 
-### 5.1 Main states (V08, A12)
-
 ```mermaid
 stateDiagram-v2
-    [*] --> NEW
-    NEW --> SCREENED: location + service checked,<br/>roles identified, no emergency
-    SCREENED --> QUOTED: capacity tentatively checked,<br/>full quote sent with expiry
-    QUOTED --> CONFIRMED: customer accepts, consent captured,<br/>slot reserved, payment condition met
-    CONFIRMED --> ASSIGNED: worker accepts offer,<br/>eligibility re-checked
-    ASSIGNED --> EN_ROUTE: departure + ETA recorded
-    EN_ROUTE --> ARRIVED: address + person matched
-    ARRIVED --> IN_SERVICE: start code / recorded call,<br/>scope checklist accepted
-    IN_SERVICE --> COMPLETED: checklist + end time,<br/>safe exit / handover
-    COMPLETED --> SETTLED: invoice, payment and<br/>payout matched
-    SETTLED --> CLOSED: follow-up done
-    CLOSED --> [*]
+    [*] --> PENDING_PAYMENT: Book (capacity held)
+    PENDING_PAYMENT --> CONFIRMED: PAYMENT_CAPTURED / CONFIRM_WITHOUT_PREPAYMENT (ops)
+    PENDING_PAYMENT --> EXPIRED: HOLD_EXPIRED
+    CONFIRMED --> ASSIGNED: WORKER_ACCEPTED
+    ASSIGNED --> CONFIRMED: WORKER_UNASSIGNED
+    CONFIRMED --> ON_HOLD: PLACE_ON_HOLD (ops)
+    ON_HOLD --> CONFIRMED: RELEASE_HOLD (ops)
+    ASSIGNED --> EN_ROUTE: START_TRAVEL
+    EN_ROUTE --> CONFIRMED: WORKER_UNASSIGNED (ops)
+    EN_ROUTE --> ARRIVED: MARK_ARRIVED
+    ARRIVED --> IN_PROGRESS: START_SERVICE (start code)
+    ARRIVED --> NO_SHOW: CUSTOMER_NO_SHOW
+    IN_PROGRESS --> COMPLETED: COMPLETE_SERVICE
+    COMPLETED --> CLOSED: CLOSE (settled)
+    NO_SHOW --> CLOSED: CLOSE
+    PENDING_PAYMENT --> CANCELLED
+    CONFIRMED --> CANCELLED
+    ON_HOLD --> CANCELLED
+    ASSIGNED --> CANCELLED
+    EN_ROUTE --> CANCELLED
+    ARRIVED --> CANCELLED: ops only
+    IN_PROGRESS --> CANCELLED: ops only (stop-work)
 ```
 
-### 5.2 Side states
+The full table — which **channel** may trigger each event and whether a **reason** is required
+— is `BOOKING_TRANSITIONS` in `packages/domain/src/booking/booking-state-machine.ts`. The same
+rows are in the database table `booking_status_transition`; a test fails if they ever differ.
 
-| State | Allowed from | Required data |
-|---|---|---|
-| `CANCELLED` | NEW … EN_ROUTE | initiator (customer / One Tappe), reason, time, refund decision |
-| `NO_SHOW` | ASSIGNED, EN_ROUTE, ARRIVED | who did not show (worker / customer no access), contact attempts |
-| `RESCHEDULED` | QUOTED … ASSIGNED | link to the **new** job; old job keeps its original promise |
-| `ON_HOLD` | SCREENED, QUOTED, CONFIRMED | owner, reason, expiry time |
+**Two layers, same rules.** `BookingTransitionService` checks the domain state machine first
+(clear error messages), then updates the row. The `booking_before_update` trigger checks again
+against the database table, the channel (`app.source`) and the reason (`app.reason`), and
+`booking_after_write` writes the history row. A raw SQL update cannot skip either.
 
-**Design decision (please confirm):** the PDF also lists `INCIDENT_OPEN` and
-`REFUND_PENDING` as side states. In the system they are **flags derived from linked
-open records** (an open incident / a pending refund), not lifecycle states. Reason: a
-job can be `COMPLETED` *and* have a pending refund; turning the refund into a state
-would erase where the job actually is. The control board still shows both queues.
+### History and promises
 
-### 5.3 Transition rules
-
-- All transitions go through **one function** in `packages/domain` that checks: allowed
-  from→to, actor role, and guard conditions (e.g. `QUOTED→CONFIRMED` requires an
-  accepted quote, required consents, and a `LOCKED` reservation).
-- Each transition writes a `job_events` row: previous state, new state, actor,
-  `occurred_at` (UTC), `recorded_at`, reason, evidence reference. Displayed in IST.
-- `job_events` is **append-only** (database trigger rejects UPDATE/DELETE).
-- Jobs are never deleted. Failed/unserved bookings remain for honest metrics.
-- Reschedule creates a new job with `rescheduled_from_job_id`.
+| Requirement                                                      | How it is guaranteed                                                                                                                                                      |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Who, when, what, previous → new, source, for every status change | `booking_status_history` row written by trigger with actor, role, source, reason, request id, timestamp.                                                                  |
+| Original promise kept permanently                                | `original_start/original_end` are copied from the first schedule on insert; any later change raises `OT003`.                                                              |
+| Every reschedule recorded                                        | `booking_schedule_change` row (previous → new, actor, source, reason) written by trigger; a reason is mandatory.                                                          |
+| Price cannot be edited after booking                             | Identity, service, address snapshot and all price columns are immutable; the calculation is frozen in `booking_price_line`.                                               |
+| Nothing important is deleted                                     | `DELETE` forbidden on bookings, assignments, reservations, payments, refunds, workers, verifications, …; history tables are append-only; `TRUNCATE` blocked.              |
+| Every change to important records is auditable                   | `audit_log` rows with before/after JSON, changed fields, actor, source, request id; secrets (password hash, bank number, document keys, incident narrative) are redacted. |
 
 ---
 
 ## 6. Capacity and dispatch
 
-### 6.1 Slot inventory (V05, V09, A13)
-
-For each worker and day: `shift window − breaks/admin = workable minutes`.
-Bookable minutes = `workable × 0.80` (20% recovery reserve, configurable per zone).
-A job block = `service duration + travel buffer + reset` (e.g. HH60 = 60 + 20 + 10 = 90 min).
-
-Worked example from the playbook, which becomes a unit test:
-`5 workers × (480 − 60) = 2,100 min → × 0.8 = 1,680 → floor(1,680 / 90) = 18 jobs/day`.
-
-Customers are shown **only windows that fit** at least one eligible worker. When no
-window fits, the portal offers a later slot or waitlist — never a paid order on hope
-(V05 "stop sales when slots run out").
-
-### 6.2 Making double-booking impossible
+### 6.1 The double-booking guarantee
 
 ```sql
--- sketch, final form in migrations
-CREATE TABLE reservation (
-  id           uuid PRIMARY KEY,
-  worker_id    uuid NOT NULL REFERENCES worker(id),
-  job_id       uuid NOT NULL REFERENCES job(id),
-  period       tstzrange NOT NULL,      -- includes travel + reset
-  status       reservation_status NOT NULL, -- HELD | LOCKED | RELEASED
-  hold_expires_at timestamptz,
-  EXCLUDE USING gist (worker_id WITH =, period WITH &&)
-    WHERE (status IN ('HELD','LOCKED'))
+CREATE TABLE worker_reservation (
+  worker_id  uuid NOT NULL,
+  period     tstzrange NOT NULL,          -- travel buffer + service + reset buffer
+  status     text NOT NULL,               -- HELD | ALLOCATED | ACCEPTED | RELEASED
+  ...
+  CONSTRAINT worker_reservation_no_overlap
+    EXCLUDE USING gist (worker_id WITH =, period WITH &&)
+    WHERE (status IN ('HELD', 'ALLOCATED', 'ACCEPTED'))
 );
 ```
 
-Two dispatchers clicking at the same time cannot both succeed; the second gets a
-clear "slot just taken" message.
+Two transactions reserving the same worker for overlapping time cannot both commit; PostgreSQL
+makes the second wait and then fail with `23P01`. The booking engine treats that as "this worker
+was just taken" and tries the next candidate inside a savepoint.
 
-### 6.3 Assignment sequence (A13)
+**Verified:** during development the constraint was temporarily removed and the concurrency
+tests in `test/concurrency.test.ts` were re-run: 3 of 10 racing customers then got the same
+single worker. With the constraint, exactly one succeeds. The application's own availability
+check is therefore not enough on its own — the constraint is what protects customers.
 
-1. **Filter** — active status, permission for this SKU and zone, all required checks
-   valid on the job date, on shift, no restriction, no overlapping reservation.
-2. **Rank** — recurring customers' regular worker first, then travel time and load.
-3. **Offer** — a `HELD` reservation + offer to one worker with scope, pay and travel.
-4. **Accept** within 3 min → reservation `LOCKED`, job `ASSIGNED`. No reply → offer
-   expires, hold released, next worker.
-5. **No accepted worker in 10 min** → alert dispatcher; customer told "unconfirmed",
-   offered later slot or refund.
+The `worker_reservation_before_insert` trigger additionally refuses a reservation unless:
 
-### 6.4 Timers (proposed values from the PDF, all configurable)
+- the worker is `APPROVED`, active, permitted for the service (and zone), not restricted;
+- every verification the service requires is `VERIFIED` in its latest attempt and still valid
+  when the job ends; every required training module is passed;
+- a planned shift in the booking's zone covers the whole period;
+- the period covers the booked service time.
 
-| Timer | Default | On expiry |
-|---|---|---|
-| Human first response (staffed hours) | 5 min | Escalate to backup dispatcher |
-| Worker offer acceptance | 3 min | Release offer, try next |
-| No accepted worker | 10 min | Alert + customer "unconfirmed" message |
-| Quote expiry | per quote | Release tentative hold |
-| Arrival window at risk | before window closes | Prompt dispatcher to send delay message |
-| Missed check-in | 2 calls over 5 min | Contact customer + Safety Officer |
-| Next customer update due | set per message | Reminder on control board |
-| Credential expiry | 14 / 7 / 1 day before | Alert Safety; block on expiry |
-| HE240 block ending | 30 min before end | Extension / replacement decision |
+Expired payment holds are released inside the same trigger, so an abandoned checkout never
+blocks the next customer even before the sweeper runs.
 
----
+### 6.2 Reservation states
 
-## 7. Data model (Phase 1 tables, Phase 2/3 marked)
+| Status      | Meaning                                                             |
+| ----------- | ------------------------------------------------------------------- |
+| `HELD`      | Customer is paying; expires at `booking.payment_due_by`.            |
+| `ALLOCATED` | Booking confirmed; the worker has been offered the job.             |
+| `ACCEPTED`  | The worker accepted.                                                |
+| `RELEASED`  | No longer blocks time (cancelled, expired, declined, rescheduled…). |
 
-All IDs are UUIDs; human-readable job codes like `OT-BKR-000123`. All money is stored in
-**paise** as integers. All times stored in UTC, shown in IST.
+### 6.3 Flow
 
 ```mermaid
-erDiagram
-    CITY ||--o{ ZONE : has
-    ZONE ||--o{ SERVICE_RELEASE : "GO/HOLD per"
-    SERVICE_SKU ||--o{ SERVICE_RELEASE : ""
-    SERVICE_SKU ||--o{ PRICE_VERSION : ""
-    PERSON ||--o{ ADDRESS : ""
-    PERSON ||--o{ CONSENT : gives
-    BOOKING ||--|{ JOB : "one or more visits"
-    BOOKING ||--o{ QUOTE : versions
-    BOOKING ||--o{ BOOKING_PARTY : "payer / recipient / contact"
-    PERSON ||--o{ BOOKING_PARTY : ""
-    JOB ||--o{ JOB_EVENT : "append-only"
-    JOB ||--o{ OFFER : ""
-    JOB ||--o{ RESERVATION : ""
-    JOB ||--o{ ASSIGNMENT : ""
-    JOB ||--o{ FIELD_EVENT : ""
-    JOB ||--o{ CHECKLIST_ITEM : ""
-    JOB ||--o{ SCOPE_CHANGE : ""
-    JOB ||--o{ MESSAGE : ""
-    WORKER ||--o{ WORKER_CHECK : ""
-    WORKER ||--o{ WORKER_PERMISSION : ""
-    WORKER ||--o{ WORKER_RESTRICTION : ""
-    WORKER ||--o{ SHIFT : ""
-    WORKER ||--o{ RESERVATION : ""
-    BOOKING ||--o{ PAYMENT : ""
-    BOOKING ||--o{ INVOICE : ""
-    JOB ||--o{ EARNING_LINE : ""
-    JOB ||--o{ CASE : ""
-    CASE ||--o{ REFUND : ""
-    JOB ||--o{ INCIDENT : ""
+sequenceDiagram
+    participant C as Customer app
+    participant API
+    participant DB as PostgreSQL
+    participant W as Worker app
+
+    C->>API: Book HH60 (service, option, address, time, promo, expected total, idempotency key)
+    API->>DB: price rules → quote; insert booking (PENDING_PAYMENT)
+    API->>DB: HELD reservation for an eligible free worker
+    DB-->>API: ok (or 23P01 → try next worker; none → NO_AVAILABILITY, nothing saved)
+    API-->>C: booking code, total, pay by
+    C->>API: pay (gateway)
+    API->>DB: PAYMENT_CAPTURED → CONFIRMED; HELD → ALLOCATED; offer (expires in 3 min)
+    API-->>W: job request (limited details)
+    W->>API: accept
+    API->>DB: offer ACCEPTED; reservation ACCEPTED; booking ASSIGNED
+    W->>API: start travel · arrived · start code · complete
+    API->>DB: EN_ROUTE · ARRIVED · IN_PROGRESS · COMPLETED
+    API->>DB: settlement → CLOSED
 ```
 
-### 7.1 Tables
+Declined or unanswered offers release that worker's reservation, and the next eligible worker
+(never one who already declined this booking) is reserved and offered. If nobody is left, the
+result reports `unfilledCrewSlots` so operations can act. Crew services (`workers_required > 1`)
+use the same code with one reservation and one offer per crew slot.
 
-**Catalog & coverage**
-- `city` — code, name, timezone.
-- `zone` — city, code, name, status (`DRAFT|RELEASED|SUSPENDED`), boundary (GeoJSON / street list / pincodes), hours, route buffer, exclusions, supervisor, revision, released_at.
-- `service_sku` — code (`HH60`, `PC120`, `HE240`, `DC_S`, `SUB26`, `AMB`), name, duration, crew size, included tasks, exclusions, requires_care_screen.
-- `price_version` — sku, zone (nullable), net price, tax lines, effective from/to, approved_by.
-- `terms_version` — kind (customer terms, privacy notice, care consent, worker terms), version, content hash, published text/URL, effective from.
-- `service_release` — sku × zone × hours × daily capacity, status `GO|HOLD`, conditions, evidence refs, approvers, decided_at, review_date.
-- `stop_sell` — sku/zone/date window, reason, set_by, cleared_by.
+### 6.4 Start code
 
-**Parties & consent**
-- `person` — name, phone, preferred language, (no Aadhaar number stored).
-- `customer_account` — person, login phone, status.
-- `address` — person, house/flat, street, landmark, pincode, lat/lng pin, zone, access notes (gate, lift, stairs, parking, pets), verified_by/at.
-- `booking_party` — booking, person, role (`PAYER|RECIPIENT|AUTHORISED_CONTACT|BACKUP_CONTACT`).
-- `consent` — person, booking (nullable), purpose (`SERVICE|INFO_SHARING|PHOTOS|LOCATION|MARKETING`), terms_version, granted_at, method (portal click / recorded call / signed form), recorded_by, withdrawn_at.
-
-**Booking**
-- `enquiry` — channel (WhatsApp / phone / portal), raw need, emergency-screen answer, created_by. One enquiry can create several bookings.
-- `booking` — enquiry, sku, zone, address, status summary, owner (accountable dispatcher), created_by.
-- `job` — booking, sequence, job_code, state, **original_window_start/end (immutable after CONFIRMED)**, current_eta (labelled estimate), scope (task priorities, versioned JSON), rescheduled_from_job_id, owner.
-- `job_event` — append-only log (see §5.3).
-- `quote` — booking, version, line items, net, tax, total, extras basis, cancellation/refund terms version, expires_at, sent_at, accepted_at, accepted_by, acceptance method.
-
-**Workforce**
-- `worker` — person, company worker ID, status (`APPLICANT|IN_VERIFICATION|SUPERVISED|ACTIVE|RESTRICTED|INACTIVE`), languages, home zone.
-- `worker_check` — type (`AGE|IDENTITY|ADDRESS|EMERGENCY_CONTACT|POLICE|REFERENCE|FITNESS|SKILL|TRAINING|CONTRACT|BANK|SUPERVISED_VISIT|INCIDENT_DRILL`), result, verifier, verified_at, expires_at, vault_document (restricted).
-- `worker_permission` — worker, sku, zone, granted_by, valid_until.
-- `worker_restriction` — worker, scope (sku/zone/all), reason, evidence, imposed_by, review_date, lifted_by, lift_reason.
-- `shift` — worker, date, start, end, breaks, zone, pre-shift readiness answers.
-- `reservation`, `offer`, `assignment` — see §6.
-
-**Field**
-- `field_event` — job, worker, type (`DEPARTED|ARRIVED|START|CHECK_IN|END|SAFE_EXIT|SOS|STOP_WORK`), occurred_at, recorded_at, method, optional location (duty-only).
-- `start_code` — job, code hash, issued_at, used_at, attempts.
-- `checklist_item` — job, task, status (`DONE|NOT_DONE|DISPUTED`), note.
-- `scope_change` — job, description, extra minutes, extra price, customer_approved_at, desk_approved_by.
-
-**Money**
-- `payment` — booking, provider, provider order/payment IDs (**unique**), amount, status.
-- `payment_event` — provider event ID (**unique**, dedup), signature verified, payload, processed_at.
-- `invoice` / `invoice_line` / `credit_note` — sequential numbering per issuing entity.
-- `refund` — case, amount, reason, requested_by, approved_by (≠ requested_by), provider ref, initiated_at, expected settlement, status.
-- `earning_line` — worker, job, type (`JOB_PAY|TRAVEL|WAITING|INCENTIVE|DEDUCTION`), amount, reason, status; `payout` — batch, paid_at, reference.
-- `reconciliation_run` — date, checks performed, discrepancies, reviewed_by (second person).
-
-**Support & safety**
-- `case` — job, type, severity, desired remedy, owner, next_update_at, status, resolution, appeal.
-- `incident` — severity, job, exact location, callback, commander, restricted narrative, actions, review_at, closed_by, reactivation approval.
-
-**Operations & audit**
-- `desk_shift_log` — opened_by, checklist answers, closed_by, handover notes.
-- `message` — job, template code, channel, rendered text, sent_by, sent_at, next_update_due_at.
-- `audit_log` — actor, action, entity, entity id, before/after (for writes), IP/device, time.
-
-**Phase 2 additions:** `care_brief`, `care_screen_answers`, `handover`, `expense_cap`/`expense`, `survey` (deep clean), `crew_assignment`, `subscription` + `subscription_visit_ledger`.
-**Phase 3 additions:** `ambulance_operator`, `vehicle`, `vehicle_check`, `vehicle_shift`, `ambulance_trip` (Form D timeline).
+The 4-digit start code is derived with HMAC from a server secret and the booking id, so it is
+never stored in clear text. The customer app displays it; the worker enters it. Wrong attempts
+are committed even though the request fails, and the code locks after five. Operations may
+start a job without a code only with a written reason, which is stored in the history.
 
 ---
 
-## 8. Payments and money
+## 7. Pricing
 
-- **Pilot model:** company quote → company payment link (e.g. Razorpay / Cashfree) → company invoice. Cash only with numbered receipts (A23).
-- **Webhooks:** verify signature → insert `payment_event` with unique provider event ID
-  (a repeat is ignored) → update `payment` inside one transaction. A retried request can
-  never double-charge (A25 acceptance check).
-- **Refunds:** requested by support, approved by a different person, initiated to the
-  original method, target initiation within 2 working days, settlement estimate shown
-  honestly (V20).
-- **Worker earnings:** written rate card; each completed job produces earning lines;
-  earned pay is never withheld because of an unrelated dispute (A10, V20).
-- **Daily reconciliation screen** (V21): jobs ↔ invoices ↔ provider ↔ bank ↔ worker dues
-  ↔ refunds ↔ signed exceptions, reviewed by a second person.
-- **Subscriptions (Phase 2):** advance received and undelivered visits tracked as an
-  obligation; monthly check `opening + purchased − delivered − refunded = closing` (V17).
+- **Customer price:** the applicable `price_rule` is chosen by priority → specificity (option,
+  zone, city, weekday, time of day) → newest; charges (`charge_rule`, e.g. instant booking,
+  evening) are added; a promo code is validated (dates, service/city scope, total and per-user
+  limits, first-booking-only) with the promotion row locked so the last redemption cannot be
+  used twice; GST is applied to the taxable value after discount.
+- **Price-changed protection:** the app sends the total it showed; if the server's total differs,
+  the booking is refused with `PRICE_CHANGED`.
+- **Worker payout:** `payout_rule` uses the same scoping but is independent of the customer price.
 
 ---
 
-## 9. Messaging
+## 8. API conventions (for Android, iOS and web alike)
 
-Pilot: the console renders the correct template (V18) for the job and the dispatcher
-sends it with one click through WhatsApp click-to-chat or copies it; the send is logged
-on the job. Later: WhatsApp Business Cloud API with approved templates.
-
-| # | Template | Trigger |
-|---|---|---|
-| 1 | Enquiry received — *"This is not confirmed yet"* | NEW |
-| 2 | Quote (one message: provider, tasks, duration, window, full price incl. tax, extras, cancellation/refund, grievance contact, acceptance link) | QUOTED |
-| 3 | Confirmed (booking ID, tasks, window, total, worker first name + company ID, start-code rule, support number) | CONFIRMED / ASSIGNED |
-| 4 | Delay / change (what changed, estimate labelled as estimate, options, next update time) | Window at risk |
-| 5 | Care update (factual; only to authorised contact) | Phase 2 |
-| 6 | Completed (checklist outcome, invoice/receipt, how to raise a concern) | COMPLETED |
-| 7 | Follow-up | After completion |
-| — | Out-of-hours / emergency guidance: *call 112 or 108 now* | Any message outside staffed hours |
+- Base path `/v1`. Breaking changes go to `/v2`; old app versions keep working.
+- JSON only. Money: integer paise plus currency. Time: ISO-8601 UTC.
+- Errors: `{ "error": { "code": "NO_AVAILABILITY", "message": "…", "details": {} } }`. Apps switch
+  on `code`; `message` is for logs/fallback.
+- Every booking-creating request carries an idempotency key, so a retry on a flaky mobile network
+  never creates two bookings.
+- Every mutating request runs in one transaction with an action context (actor, role, source,
+  request id) that the database writes into history and audit rows.
+- Authentication (next milestone): phone OTP for customers and workers; password + TOTP for staff;
+  short-lived access tokens with rotating refresh tokens stored hashed per device.
 
 ---
 
-## 10. Security, privacy and continuity
+## 9. What is built vs next
 
-- Staff: named accounts, password + TOTP MFA, short sessions on company devices.
-- Workers/customers: phone OTP; worker sessions bound to a registered device.
-- Least-privilege queries: workers can only query their own jobs; address is released to
-  a worker only after they accept, and access is revoked when the job closes (A25).
-- Restricted vault: ID, police, fitness, consent forms, incident evidence. Encrypted,
-  never in the dispatch view, every access logged.
-- No Aadhaar numbers stored; store *verification method, verifier, date, result* (A09, A30).
-- Location only during duty and only for the job; no permanent route history (A26).
-- Backups: encrypted daily + point-in-time recovery; **restore tested** before launch.
-  Targets to test: RTO 4 h, RPO 1 h (V23).
-- **Manual fallback:** a printable, access-controlled "active jobs + emergency list" export,
-  and a backfill screen that records manual events with their original times (V23).
-- Secrets in a secrets manager, never in code or chat. Synthetic data only in tests.
-- AI (if ever used) may *draft* messages for review; it must not triage emergencies or
-  decide care suitability (A25).
-
----
-
-## 11. Acceptance checks → automated tests
-
-From A25, each becomes a named test that must pass in CI:
-
-| # | Check | Test type |
-|---|---|---|
-| 1 | Unauthorised role cannot read a record | API integration, per role |
-| 2 | Expired credential blocks assignment | Integration |
-| 3 | Retry cannot double-charge | Webhook replay integration |
-| 4 | Cancellation releases capacity | Integration |
-| 5 | Safety ticket reaches backup when primary does not respond | Scheduler integration |
-| 6 | Restore recovers active jobs | Scripted restore drill (pre-launch) |
-| 7 | Job closure revokes worker's access to address | Integration |
-| + | Two simultaneous assignments for one slot → exactly one succeeds | Concurrency integration |
-| + | Original promised window unchanged after ETA updates | Unit + integration |
-| + | `job_events` cannot be updated or deleted | DB integration |
-| + | Capacity example = 18 jobs/day | Unit |
-
----
-
-## 12. Build milestones (Phase 1)
-
-| # | Milestone | Done when |
-|---|---|---|
-| M0 | Foundations: monorepo, CI, Docker Postgres, lint/format/typecheck, auth + RBAC, audit log | CI green; role test matrix passes |
-| M1 | Catalog, zones, prices, terms, service release register | A booking cannot be confirmed unless release is `GO` |
-| M2 | Parties, addresses, consent; workers, checks, permissions, restrictions, shifts | Worker eligibility query correct incl. expiry |
-| M3 | Enquiry → booking → job, state machine, quotes, event log | All transitions tested; append-only enforced |
-| M4 | Capacity, reservations, offers, timers, control board | Double-booking impossible; timers fire |
-| M5 | Worker app: HH60 field flow, start code, checklist, scope change, SOS | End-to-end job on a phone |
-| M6 | Payments, invoices, refunds with approval separation, earnings, reconciliation | Webhook replay safe; reconciliation balances |
-| M7 | Cases, incidents, follow-up, message templates | Complaint/incident flows per V19–V20 |
-| M8 | Customer portal: enquiry, quote accept + consent, pay, tracker, review, concern | Customer can complete a booking from a link |
-| M9 | Ops: desk shift open/close, metrics, exports, backup/restore drill, simulation data | Rehearsal cases from A36 pass on staging |
-
-Then Phase 2 (care, deep clean, subscription) and Phase 3 (ambulance), each behind its
-own release gate.
+| Area                                                                          | Status                                     |
+| ----------------------------------------------------------------------------- | ------------------------------------------ |
+| Monorepo, CI, lint, typecheck, formatting                                     | Done                                       |
+| Database schema for every area in the V1 list (auth → safety)                 | Done (migrations 0001–0010)                |
+| Booking state machine (domain + database)                                     | Done, tested                               |
+| Concurrency protection, eligibility, shift checks                             | Done, tested (incl. mutation check)        |
+| Booking creation (serviceability, pricing, promo, capacity hold, idempotency) | Done, tested                               |
+| Dispatch: confirm, offer, accept, reject, expiry, re-offer                    | Done, tested                               |
+| Lifecycle: cancel, reschedule, expire unpaid, field events, start code, close | Done, tested                               |
+| Auth endpoints (OTP, staff login + MFA), RBAC guards, masking                 | **Next**                                   |
+| REST controllers for customer, worker and admin                               | **Next**                                   |
+| Payment gateway integration (order, webhook verify + dedup, refunds)          | **Next** (tables and guards ready)         |
+| Scheduler for sweepers (unpaid expiry, offer expiry, notifications)           | **Next** (service methods ready)           |
+| Notifications (push/SMS/WhatsApp/email templates in en/hi)                    | Tables ready                               |
+| Support cases, safety incidents, payouts, invoices                            | Tables and guards ready; services to build |
+| Customer app, worker app, admin panel                                         | After the API endpoints are stable         |
