@@ -1,9 +1,11 @@
 import { Controller, Get, Inject, ServiceUnavailableException } from '@nestjs/common';
 import { sql, type Kysely } from 'kysely';
+import { Public } from '../auth/decorators.js';
 import { DATABASE } from '../database/database.module.js';
 import type { DB } from '../database/db.generated.js';
 
 @Controller('health')
+@Public()
 export class HealthController {
   constructor(@Inject(DATABASE) private readonly db: Kysely<DB>) {}
 

@@ -1,8 +1,10 @@
 import { randomInt, randomUUID } from 'node:crypto';
-import { FastifyAdapter } from '@nestjs/platform-fastify';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { sql, type Kysely } from 'kysely';
 import { AppModule } from '../../src/app.module.js';
+import { configureApp, createAdapter } from '../../src/bootstrap.js';
+import { loadEnv } from '../../src/config/env.js';
 import {
   BookingCreationService,
   type CreateBookingInput,
@@ -16,6 +18,7 @@ import type { DB } from '../../src/database/db.generated.js';
 import { inTransaction, type Tx } from '../../src/database/transaction.js';
 
 export interface TestApp {
+  readonly http: NestFastifyApplication;
   readonly db: Kysely<DB>;
   readonly creation: BookingCreationService;
   readonly lifecycle: BookingLifecycleService;
@@ -25,10 +28,16 @@ export interface TestApp {
 }
 
 export async function createTestApp(): Promise<TestApp> {
+  const env = loadEnv();
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-  const app = moduleRef.createNestApplication(new FastifyAdapter());
+  const app = moduleRef.createNestApplication<NestFastifyApplication>(createAdapter(env), {
+    rawBody: true,
+  });
+  configureApp(app, env);
   await app.init();
+  await app.getHttpAdapter().getInstance().ready();
   return {
+    http: app,
     db: app.get<Kysely<DB>>(DATABASE),
     creation: app.get(BookingCreationService),
     lifecycle: app.get(BookingLifecycleService),

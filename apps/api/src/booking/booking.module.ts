@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { Clock } from '../common/clock.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import { ServiceabilityService } from '../service-area/serviceability.service.js';
 import { BookingCreationService } from './booking-creation.service.js';
@@ -12,7 +11,6 @@ import { VerificationCodeService } from './verification-code.service.js';
 /** The booking engine: creation, capacity, dispatch and lifecycle. */
 @Module({
   providers: [
-    Clock,
     ServiceabilityService,
     PricingService,
     BookingTransitionService,

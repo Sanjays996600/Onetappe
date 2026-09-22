@@ -39,3 +39,16 @@ export class ConflictError extends AppError {
 export class BusinessRuleError extends AppError {
   readonly httpStatus = 422;
 }
+
+/** Too many attempts; the client should wait `retryAfterSeconds`. */
+export class RateLimitedError extends AppError {
+  readonly httpStatus = 429;
+  constructor(code: string, message: string, retryAfterSeconds: number) {
+    super(code, message, { retryAfterSeconds });
+  }
+}
+
+/** Missing, invalid or expired credentials. */
+export class UnauthorizedError extends AppError {
+  readonly httpStatus = 401;
+}
