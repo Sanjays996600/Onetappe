@@ -22,15 +22,17 @@ export function describeError(
       ? t.noConnection
       : error.code === 'TIMEOUT'
         ? t.timeout
-        : error.status === 503 || error.status === 502 || error.status === 504
-          ? t.serviceUnavailable
-          : error.isSignedOut
-            ? t.signedOut
-            : error.status >= 500
-              ? t.somethingWrong
-              : // Business rule messages from the API are written for people (English).
-                locale === 'en'
-                ? error.message
-                : t.somethingWrong);
+        : error.status === 429
+          ? t.tooManyRequests
+          : error.status === 503 || error.status === 502 || error.status === 504
+            ? t.serviceUnavailable
+            : error.isSignedOut
+              ? t.signedOut
+              : error.status >= 500
+                ? t.somethingWrong
+                : // Business rule messages from the API are written for people (English).
+                  locale === 'en'
+                  ? error.message
+                  : t.somethingWrong);
   return { message, reference: error.requestId, code: error.code };
 }

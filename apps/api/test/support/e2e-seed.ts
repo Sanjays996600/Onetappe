@@ -5,7 +5,7 @@
  * through the terms screens as in production, and the invoice issuer. Run as the schema owner:  E2E_OWNER_URL=… tsx test/support/e2e-seed.ts
  */
 import { createHash } from 'node:crypto';
-import { Kysely, PostgresDialect } from 'kysely';
+import { Kysely, PostgresDialect, sql } from 'kysely';
 import pg from 'pg';
 import type { DB } from '../../src/database/db.generated.js';
 import { inTransaction } from '../../src/database/transaction.js';
@@ -19,6 +19,8 @@ const db = new Kysely<DB>({
   dialect: new PostgresDialect({ pool: new pg.Pool({ connectionString: url }) }),
 });
 try {
+  // Unique numbers for fixture codes, pincodes and phones (see fixtures.ts).
+  await sql`CREATE SEQUENCE IF NOT EXISTS test_world_seq START 1`.execute(db);
   const effectiveFrom = new Date(Date.now() - 86_400_000);
   await inTransaction(db, SYSTEM, (tx) =>
     tx

@@ -53,6 +53,16 @@ export class UnauthorizedError extends AppError {
   readonly httpStatus = 401;
 }
 
+/** The caller is sending requests faster than allowed; retry after the given seconds. */
+export class TooManyRequestsError extends AppError {
+  readonly httpStatus = 429;
+  constructor(retryAfterSeconds: number) {
+    super('RATE_LIMITED', 'Too many requests. Please wait a moment and try again.', {
+      retryAfterSeconds,
+    });
+  }
+}
+
 /**
  * A dependency (database, gateway) is temporarily unreachable. The client may retry after
  * `retryAfterSeconds`; creating requests must be retried with the same Idempotency-Key,

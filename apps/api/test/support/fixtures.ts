@@ -1,4 +1,4 @@
-import { randomInt, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { sql, type Kysely } from 'kysely';
 import type { CreateBookingInput } from '../../src/booking/booking-creation.service.js';
 import type { ActionContext } from '../../src/database/action-context.js';
@@ -73,19 +73,20 @@ export interface World {
 }
 
 const ZONE_CENTER = { lat: 28.6139, lng: 77.391 };
-let sequence = 0;
 
-function uniqueSuffix(): string {
-  sequence += 1;
-  return `${Date.now().toString(36).toUpperCase()}${sequence}`.slice(-10);
+/**
+ * A number unique across every test process sharing the database (files run in parallel),
+ * from a sequence created by the test and e2e set-up. Codes and pincodes derive from it,
+ * so two worlds can never collide.
+ */
+async function nextWorldNumber(db: Kysely<DB>): Promise<number> {
+  const { rows } = await sql<{ n: string }>`SELECT nextval('test_world_seq') AS n`.execute(db);
+  return Number(rows[0]?.n);
 }
 
-function randomPhone(): string {
-  return `+9199${randomInt(10_000_000, 99_999_999)}`;
-}
-
-function uniquePincode(): string {
-  return String(randomInt(200_000, 999_999));
+/** A fixture phone number, unique across processes (60-series; OTP tests use 9-series). */
+async function uniquePhone(db: Kysely<DB>): Promise<string> {
+  return `+9160${String(await nextWorldNumber(db)).padStart(8, '0')}`;
 }
 
 /** The next calendar day in India, as YYYY-MM-DD. */
@@ -140,17 +141,19 @@ export interface WorldOptions {
  * tests independent while sharing one database.
  */
 export async function createWorld(db: Kysely<DB>, options: WorldOptions = {}): Promise<World> {
-  const suffix = uniqueSuffix();
+  const n = await nextWorldNumber(db);
+  const suffix = `T${n.toString(36).toUpperCase().padStart(6, '0')}`;
   const day = tomorrowInIndia();
   const at = (hour: number, minute = 0) =>
     new Date(`${day}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00+05:30`);
-  const pincode = uniquePincode();
+  // 6 digits, first digit 2–9 (as Indian pincodes), distinct for every world.
+  const pincode = String(200_000 + (n % 800_000));
   const center = options.center ?? ZONE_CENTER;
 
   return inTransaction(db, SYSTEM, async (tx) => {
     const staff = await tx
       .insertInto('app_user')
-      .values({ phone_e164: randomPhone(), full_name: 'Ops Agent' })
+      .values({ phone_e164: await uniquePhone(tx), full_name: 'Ops Agent' })
       .returning('id')
       .executeTakeFirstOrThrow();
 
@@ -275,7 +278,7 @@ export async function createWorld(db: Kysely<DB>, options: WorldOptions = {}): P
     for (let i = 0; i < (options.workers ?? 1); i += 1) {
       const user = await tx
         .insertInto('app_user')
-        .values({ phone_e164: randomPhone(), full_name: `Worker ${i + 1}` })
+        .values({ phone_e164: await uniquePhone(tx), full_name: `Worker ${i + 1}` })
         .returning('id')
         .executeTakeFirstOrThrow();
       await tx
@@ -343,7 +346,7 @@ export async function createWorld(db: Kysely<DB>, options: WorldOptions = {}): P
         inTransaction(db, SYSTEM, async (ctx) => {
           const user = await ctx
             .insertInto('app_user')
-            .values({ phone_e164: randomPhone(), full_name: 'Test Customer' })
+            .values({ phone_e164: await uniquePhone(ctx), full_name: 'Test Customer' })
             .returning('id')
             .executeTakeFirstOrThrow();
           await ctx.insertInto('customer_profile').values({ user_id: user.id }).execute();
@@ -352,7 +355,7 @@ export async function createWorld(db: Kysely<DB>, options: WorldOptions = {}): P
             .values({
               user_id: user.id,
               contact_name: 'Test Customer',
-              contact_phone_e164: randomPhone(),
+              contact_phone_e164: await uniquePhone(ctx),
               house_number: 'B-12',
               street: 'Main Road',
               pincode,

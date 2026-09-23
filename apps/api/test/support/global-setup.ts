@@ -17,6 +17,8 @@ export default async function setup(): Promise<void> {
   try {
     await pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
     await migrate(pool, MIGRATIONS);
+    // Unique numbers for test fixtures across the parallel test processes (fixtures.ts).
+    await pool.query('CREATE SEQUENCE test_world_seq START 1');
     // The login the application under test uses: a member of the runtime role only.
     await pool.query(`
       DO $$ BEGIN

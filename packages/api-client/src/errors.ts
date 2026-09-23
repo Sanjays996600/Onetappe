@@ -30,9 +30,12 @@ export class ApiError extends Error {
     this.name = 'ApiError';
   }
 
-  /** No answer, or the server said "try again": safe to retry an idempotent request. */
+  /**
+   * Worth retrying after a pause (no connection, a busy dependency, or a rate limit); only
+   * idempotent requests are retried.
+   */
   get isTransient(): boolean {
-    return this.status === 0 || this.status === 503 || this.status === 502 || this.status === 504;
+    return [0, 429, 502, 503, 504].includes(this.status);
   }
 
   /** The person must sign in again. */

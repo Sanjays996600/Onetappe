@@ -3,7 +3,7 @@
 Reviewed on 23 Sep 2026 against the repository (branch
 `claude/appointment-booking-app-design-tqp3ip`, migrations 0001–0026) and the running system:
 
-- the API suite: 29 files and 289 tests passing, as the least-privilege database role;
+- the API suite: 30 files and 293 tests passing, as the least-privilege database role;
 - the browser suite: 7 tests (admin panel, plus the customer and worker web builds driving
   the whole HH60 journey), passing locally and in CI (run #31);
 - the logs of that journey, scanned for personal data;
@@ -45,6 +45,7 @@ The review found real problems and fixed them in code, with tests:
 | **The database connection did not have to use TLS.**                                                                                                                                                                       | Staging and production refuse a `DATABASE_URL` without `sslmode=verify-full`.                                                                                                      | `config.test.ts`                                 |
 | **Android backups included app data.**                                                                                                                                                                                     | `allowBackup: false` in both apps.                                                                                                                                                 | Build configuration (verify on device)           |
 | **The browser API rejected PATCH, and the request id was invisible to browsers.** (Found by the journey test.)                                                                                                             | CORS allows PATCH and exposes `x-request-id`.                                                                                                                                      | `journey.spec.ts`                                |
+| **No general request limits.** Only OTP, staff login and start codes were limited.                                                                                                                                         | Per-session and per-IP limits, tighter for sensitive actions (§5).                                                                                                                 | `rate-limit.test.ts`                             |
 | **Restore had never been tried.**                                                                                                                                                                                          | `scripts/restore-drill.sh` dumps, restores and verifies data **and protections**. It runs in CI on every push.                                                                     | CI `integration-tests` job                       |
 
 ---
@@ -144,16 +145,16 @@ Roles without that permission (auditor, finance, worker operations) never see it
 
 ## 5. Authentication and sessions
 
-| Control                      | Implementation                                                                                                                                                                                                                                                                                                                | Status           |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| OTP                          | **Code:** 6 digits, 5-minute expiry, only the newest code works, single use, 5 attempts per code. **Limits:** 30 s resend cooldown; 5 per hour and 10 per day per phone; 20 per hour per network; 10 wrong codes lock the phone for an hour. **Other:** no master or test code in staging or production (refused at start-up) | Tested           |
-| Account enumeration          | OTP request answers the same whether the number is known; staff login gives the same answer for unknown emails                                                                                                                                                                                                                | Tested           |
-| Staff                        | Password + TOTP (enrolled on first sign-in, codes not reusable), lockout after 5 wrong passwords, 10-minute access token, 30-minute idle timeout, 12-hour absolute limit, fresh authenticator check for sensitive actions                                                                                                     | Tested           |
-| Phone-app sessions           | 15-minute access token. Refresh token rotated on use, and a replayed old refresh token revokes the whole session (theft detection). Absolute limit: 90 days (customer), 30 days (worker)                                                                                                                                      | Tested           |
-| Logout / sign out everywhere | Logout revokes at once. "Sign out of all devices" (new); staff can end a person's sessions (new, audited)                                                                                                                                                                                                                     | Tested           |
-| Suspended accounts           | Disabled users refused on every request. **Suspended workers limited on every request (new)**. Suspended staff: sessions revoked                                                                                                                                                                                              | Tested           |
-| Token storage in apps        | iOS Keychain / Android Keystore, `WHEN_UNLOCKED_THIS_DEVICE_ONLY` (not migrated to a new phone). Web test build: memory only. Admin panel: sealed httpOnly `__Host-` cookie, no tokens in the browser                                                                                                                         | Verify on device |
-| General API rate limiting    | **Not built** beyond OTP, staff login and start-code attempts: blocker B3                                                                                                                                                                                                                                                     | Missing          |
+| Control                      | Implementation                                                                                                                                                                                                                                                                                                                        | Status           |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| OTP                          | **Code:** 6 digits, 5-minute expiry, only the newest code works, single use, 5 attempts per code. **Limits:** 30 s resend cooldown; 5 per hour and 10 per day per phone; 20 per hour per network; 10 wrong codes lock the phone for an hour. **Other:** no master or test code in staging or production (refused at start-up)         | Tested           |
+| Account enumeration          | OTP request answers the same whether the number is known; staff login gives the same answer for unknown emails                                                                                                                                                                                                                        | Tested           |
+| Staff                        | Password + TOTP (enrolled on first sign-in, codes not reusable), lockout after 5 wrong passwords, 10-minute access token, 30-minute idle timeout, 12-hour absolute limit, fresh authenticator check for sensitive actions                                                                                                             | Tested           |
+| Phone-app sessions           | 15-minute access token. Refresh token rotated on use, and a replayed old refresh token revokes the whole session (theft detection). Absolute limit: 90 days (customer), 30 days (worker)                                                                                                                                              | Tested           |
+| Logout / sign out everywhere | Logout revokes at once. "Sign out of all devices" (new); staff can end a person's sessions (new, audited)                                                                                                                                                                                                                             | Tested           |
+| Suspended accounts           | Disabled users refused on every request. **Suspended workers limited on every request (new)**. Suspended staff: sessions revoked                                                                                                                                                                                                      | Tested           |
+| Token storage in apps        | iOS Keychain / Android Keystore, `WHEN_UNLOCKED_THIS_DEVICE_ONLY` (not migrated to a new phone). Web test build: memory only. Admin panel: sealed httpOnly `__Host-` cookie, no tokens in the browser                                                                                                                                 | Verify on device |
+| General API rate limiting    | **Built this round:** per session when signed in (mobile carriers share IPs), per IP otherwise, tighter for bookings, payments, addresses, support, SOS, PII reveal, document views and refund requests; 429 `RATE_LIMITED` with `Retry-After`; the apps retry only safe requests. Per API instance: the edge (WAF) limit is still B3 | Tested           |
 
 ---
 
@@ -396,6 +397,7 @@ token) and database-backed backlog gauges.
 | Notifications                          | `NotificationBacklog` (failed or unsent)                                                                       |
 | Abnormal booking failures              | `ConfirmedBookingsUnassigned`                                                                                  |
 | SOS                                    | `SafetyIncidentOpen`, **`SafetyIncidentUnacknowledged`, `SafetyNobodyOnCall` (new)**                           |
+| Request floods                         | `RateLimitedRequestsHigh`                                                                                      |
 | Authentication abuse / security events | Recorded (`ACCESS_DENIED` audit rows, OTP locks, refresh-token reuse revocations). **No alert rules yet (H1)** |
 
 Alertmanager receivers (who is phoned) are infrastructure (B1).
@@ -449,8 +451,8 @@ Alertmanager receivers (who is phoned) are infrastructure (B1).
 
 | Component                                  | Classification                    | Notes                                                                      |
 | ------------------------------------------ | --------------------------------- | -------------------------------------------------------------------------- |
-| NestJS API (core)                          | FUNCTIONAL BUT HARDENING REQUIRED | H1–H3; general rate limiting B3                                            |
-| Authentication / sessions                  | FUNCTIONAL BUT HARDENING REQUIRED | Device testing (B5); rate limiting (B3)                                    |
+| NestJS API (core)                          | FUNCTIONAL BUT HARDENING REQUIRED | H1–H3; edge rate limiting B3                                               |
+| Authentication / sessions                  | FUNCTIONAL BUT HARDENING REQUIRED | Device testing (B5); edge rate limiting (B3)                               |
 | RBAC and authorization                     | PRODUCTION READY                  | Route policy and IDOR tests in CI; customer suspension action missing (H3) |
 | PostgreSQL schema and guarantees           | PRODUCTION READY                  | Append-only, exclusion constraints, least privilege, verified on restore   |
 | Booking engine, pricing, serviceability    | PRODUCTION READY                  | Concurrency and abnormal-traffic tests                                     |
@@ -511,21 +513,26 @@ Alertmanager receivers (who is phoned) are infrastructure (B1).
   with the SMS provider down as a second drill.
 - **Dependencies:** B1; the MSG91 DLT account; safety team hiring.
 
-### B3 — No general API rate limiting · BLOCKER BEFORE PILOT
+### B3 — Edge rate limiting (WAF) · BLOCKER BEFORE PILOT
 
-- **Problem:** only OTP, staff login and start codes are limited. Every other authenticated
-  endpoint accepts unlimited requests.
-- **Impact:** scraping one's own data is harmless, but floods can exhaust the database
-  pool and the gateway budget; a stolen token can hammer the API.
+- **Done in the application** (`common/http/rate-limit.ts`, `test/security/rate-limit.test.ts`):
+  - signed-in requests counted per session, others per IP;
+  - tighter limits for creating records, payments, SOS and reveals of personal data;
+  - health checks and signed webhooks exempt;
+  - 429 with `Retry-After`;
+  - alert `RateLimitedRequestsHigh`.
+- **Problem remaining:** the counters are per API instance and in memory; a volumetric
+  flood still reaches the instances.
+- **Impact:** a flood can exhaust the instances before the application limits apply to
+  enough of it.
 - **Fix:**
-  - edge limits per IP at the WAF;
-  - an application limit per session and per IP for mutating routes, with 429 and
-    `Retry-After`;
-  - stricter limits on payment start, SOS and support creation;
-  - an alert on the rate of 429s.
-- **Tests:** a limit test per route group; a load test proving limits do not affect
-  normal use.
-- **Dependencies:** B1 (WAF).
+  - WAF in front of the load balancer with per-IP rate rules, generous enough for carrier
+    CGNAT;
+  - bot and geo rules for the admin panel;
+  - tune `RATE_LIMIT_*` per instance count.
+- **Tests:** a load test in staging showing normal use unaffected and floods cut at the
+  edge.
+- **Dependencies:** B1.
 
 ### B4 — Providers not verified live · BLOCKER BEFORE PILOT
 

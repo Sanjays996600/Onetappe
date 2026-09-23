@@ -169,4 +169,28 @@ describe('HttpClient', () => {
     await expect(http.request(Ok, 'GET', '/x')).resolves.toEqual({ ok: 'yes' });
     expect(mismatches).toEqual(['GET /x']);
   });
+
+  it('waits and retries a rate-limited read, but never repeats an unsafe write', async () => {
+    let reads = 0;
+    const { impl, calls } = fakeFetch((req) => {
+      if (req.method === 'GET') {
+        reads += 1;
+        return reads === 1
+          ? error(429, 'RATE_LIMITED', { 'retry-after': '0' })
+          : { status: 200, body: { ok: true } };
+      }
+      return error(429, 'RATE_LIMITED', { 'retry-after': '1' });
+    });
+    const http = new HttpClient({
+      baseUrl: 'https://api.test',
+      fetch: impl,
+      tokens: memoryStore({ accessToken: 'a1', refreshToken: 'r1' }),
+      retryDelaysMs: [1, 1],
+    });
+    expect(await http.request(Ok, 'GET', '/customer/me')).toEqual({ ok: true });
+    await expect(
+      http.request(Ok, 'POST', '/customer/bookings/x/cancel', { body: { reason: 'x' } }),
+    ).rejects.toMatchObject({ code: 'RATE_LIMITED', retryAfterSeconds: 1 });
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+  });
 });

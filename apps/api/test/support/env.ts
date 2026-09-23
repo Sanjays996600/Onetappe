@@ -21,6 +21,10 @@ Object.assign(process.env, {
   OTP_PROVIDER: 'test',
   PAYMENT_PROVIDER: 'sandbox',
   SANDBOX_WEBHOOK_SECRET: 'test-sandbox-webhook-secret-0123456789ab',
+  // Suites fire far more requests than a person could; the limits have their own test.
+  RATE_LIMIT_PER_SESSION_PER_MINUTE: '1000000',
+  RATE_LIMIT_ANONYMOUS_PER_MINUTE: '1000000',
+  RATE_LIMIT_SENSITIVE_PER_MINUTE: '1000000',
   // Keep test output readable; the observability test raises the level to capture lines.
   LOG_LEVEL: 'error',
 });

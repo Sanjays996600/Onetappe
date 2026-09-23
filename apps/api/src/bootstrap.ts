@@ -4,6 +4,7 @@ import type { INestApplication } from '@nestjs/common';
 import { AppModule } from './app.module.js';
 import { AppErrorFilter } from './common/app-error.filter.js';
 import { registerClientIp, trustedProxyHops } from './common/http/client-ip.js';
+import { registerRateLimit } from './common/http/rate-limit.js';
 import { registerRequestId } from './common/http/request-id.js';
 import { registerSecurityHeaders } from './common/http/security-headers.js';
 import { registerHttpObservability } from './observability/http-observability.js';
@@ -32,7 +33,15 @@ export function createAdapter(env: Pick<Env, 'APP_ENV' | 'TRUSTED_PROXY_HOPS'>):
 /** HTTP configuration shared by the server and the tests. */
 export function configureApp(
   app: INestApplication,
-  env: Pick<Env, 'APP_ENV' | 'CORS_ORIGINS' | 'BFF_SHARED_SECRET'>,
+  env: Pick<
+    Env,
+    | 'APP_ENV'
+    | 'CORS_ORIGINS'
+    | 'BFF_SHARED_SECRET'
+    | 'RATE_LIMIT_PER_SESSION_PER_MINUTE'
+    | 'RATE_LIMIT_ANONYMOUS_PER_MINUTE'
+    | 'RATE_LIMIT_SENSITIVE_PER_MINUTE'
+  >,
 ): void {
   // One version prefix for every client; breaking changes go to /api/v2.
   app.setGlobalPrefix(API_PREFIX);
@@ -40,6 +49,11 @@ export function configureApp(
   const fastify = (app as NestFastifyApplication).getHttpAdapter().getInstance();
   registerRequestId(fastify);
   registerClientIp(fastify, env.BFF_SHARED_SECRET);
+  registerRateLimit(fastify, {
+    perSessionPerMinute: env.RATE_LIMIT_PER_SESSION_PER_MINUTE,
+    anonymousPerIpPerMinute: env.RATE_LIMIT_ANONYMOUS_PER_MINUTE,
+    sensitivePerMinute: env.RATE_LIMIT_SENSITIVE_PER_MINUTE,
+  });
   registerSecurityHeaders(fastify, {
     hsts: env.APP_ENV === 'staging' || env.APP_ENV === 'production',
   });

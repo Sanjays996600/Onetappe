@@ -117,6 +117,10 @@ const EnvSchema = z
 
     /** Comma-separated origins allowed to call the API from browsers (admin panel). */
     CORS_ORIGINS: z.string().default(''),
+    /** Request limits per API instance (see common/http/rate-limit.ts). */
+    RATE_LIMIT_PER_SESSION_PER_MINUTE: z.coerce.number().int().min(30).default(300),
+    RATE_LIMIT_ANONYMOUS_PER_MINUTE: z.coerce.number().int().min(10).default(60),
+    RATE_LIMIT_SENSITIVE_PER_MINUTE: z.coerce.number().int().min(5).default(20),
     /**
      * Proxies in front of the API that add X-Forwarded-For (the load balancer = 1). Only
      * that many hops are trusted, so a client cannot choose its own IP by sending the header.

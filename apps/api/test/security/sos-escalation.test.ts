@@ -169,12 +169,27 @@ describe('an SOS pages people until someone acknowledges it', () => {
     let pages = await pagesTo(incidentId);
     expect(new Set(pages.map((p) => p.user_id))).toEqual(new Set([lead.member.userId]));
     expect(pages.map((p) => p.channel).sort()).toEqual(['EMAIL', 'SMS']);
-    await runJob(app, 'dispatch-notifications');
-    const smsToLead = fake.sms.filter((m) => m.recipient['mobiles'] === lead.phone.slice(1));
-    expect(smsToLead).toHaveLength(1);
-    expect(smsToLead[0]?.templateId).toBe('dlt-safety-alert');
-    // The page carries no name, address or location of the person in trouble.
-    expect(JSON.stringify(smsToLead[0]?.recipient)).not.toMatch(/lat|lng|address|Sector/i);
+    // What the SMS carries (other test files dispatch in parallel from the same database,
+    // so the stored message is checked rather than one fake provider's inbox): the DLT
+    // template, and no name, address or location of the person in trouble.
+    const sms = await app.db
+      .selectFrom('notification as n')
+      .innerJoin('notification_template as t', 't.id', 'n.template_id')
+      .select(['t.provider_template_id', 'n.variables', 'n.user_id'])
+      .where('n.dedupe_key', 'like', `SAFETY_ALERT:${incidentId}:%`)
+      .where('n.channel', '=', 'SMS')
+      .executeTakeFirstOrThrow();
+    expect(sms.provider_template_id).toBe('dlt-safety-alert');
+    expect(sms.user_id).toBe(lead.member.userId);
+    expect(Object.keys(sms.variables as Json).sort()).toEqual([
+      'category',
+      'incidentCode',
+      'page',
+      'raisedAt',
+      'reporter',
+    ]);
+    // (Delivery itself is covered by notifications.test.ts; the dispatch job's lease is
+    // shared with the other test files running in parallel.)
 
     // Not due yet: nothing more.
     await runJob(app, 'page-safety-incidents');

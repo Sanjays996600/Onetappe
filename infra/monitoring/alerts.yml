@@ -28,6 +28,14 @@ groups:
         annotations:
           summary: More than 2% of API requests are failing with 5xx
 
+      # Sustained limiting: a flood, a scraper, or a limit set too low for real use.
+      - alert: RateLimitedRequestsHigh
+        expr: sum(rate(onetappe_http_request_duration_seconds_count{status="429"}[5m])) > 1
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: The API has been refusing more than one request a second for exceeding limits
+
       - alert: ApiLatencyHigh
         expr: |
           histogram_quantile(0.95, sum by (le) (rate(onetappe_http_request_duration_seconds_bucket[5m]))) > 1.5
