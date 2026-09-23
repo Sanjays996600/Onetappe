@@ -52,6 +52,7 @@ function runTransaction<T>(
   context: ActionContext,
   work: (tx: Tx) => Promise<T>,
 ): Promise<T> {
+  const expected = context.expectedBookingVersion;
   return db.transaction().execute(async (tx) => {
     await sql`
         SELECT set_config('app.actor_user_id', ${context.actorUserId ?? ''}, true),
@@ -59,7 +60,9 @@ function runTransaction<T>(
                set_config('app.source', ${context.source}, true),
                set_config('app.request_id', ${context.requestId}, true),
                set_config('app.event', '', true),
-               set_config('app.reason', ${context.reason?.trim() ?? ''}, true)
+               set_config('app.reason', ${context.reason?.trim() ?? ''}, true),
+               set_config('app.expected_booking',
+                          ${expected ? `${expected.bookingId}:${expected.version}` : ''}, true)
       `.execute(tx);
     return work(tx);
   });

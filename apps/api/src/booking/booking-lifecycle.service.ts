@@ -243,6 +243,7 @@ export class BookingLifecycleService {
   ): Promise<BookingStatus> {
     return inTransaction(this.db, context, async (tx) => {
       const booking = await this.transitions.lock(tx, bookingId);
+      if (await this.alreadyApplied(tx, booking, event, context)) return booking.status;
       await this.assertAssignedWorker(tx, booking, context);
       const status = await this.transitions.apply(tx, booking, event, context, {
         reason,
@@ -275,6 +276,9 @@ export class BookingLifecycleService {
       context,
       async (tx): Promise<{ status: BookingStatus } | { error: AppError }> => {
         const booking = await this.transitions.lock(tx, bookingId);
+        if (await this.alreadyApplied(tx, booking, 'START_SERVICE', context)) {
+          return { status: booking.status };
+        }
         await this.assertAssignedWorker(tx, booking, context);
         if (booking.status !== 'ARRIVED') {
           throw new BusinessRuleError(
@@ -306,6 +310,32 @@ export class BookingLifecycleService {
     );
     if ('error' in outcome) throw outcome.error;
     return outcome.status;
+  }
+
+  /**
+   * True when this exact action by this same person is already the booking's latest step:
+   * a retry after the app lost the response (poor signal). The retry then succeeds without
+   * repeating anything, instead of the worker seeing an error for something that worked.
+   */
+  private async alreadyApplied(
+    tx: Tx,
+    booking: LockedBooking,
+    event: FieldEvent | 'START_SERVICE',
+    context: ActionContext,
+  ): Promise<boolean> {
+    if (!context.actorUserId) return false;
+    const last = await tx
+      .selectFrom('booking_status_history')
+      .select(['event', 'to_status', 'actor_user_id'])
+      .where('booking_id', '=', booking.id)
+      .orderBy('id', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+    return (
+      last?.event === event &&
+      last.to_status === booking.status &&
+      last.actor_user_id === context.actorUserId
+    );
   }
 
   private async reReserve(

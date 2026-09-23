@@ -17,7 +17,9 @@ import { AdminBookingService } from './admin-booking.service.js';
 import { BookingTraceService } from './booking-trace.service.js';
 
 const reason = z.string().trim().min(5, 'Give a meaningful reason').max(500);
-const ReasonBody = z.object({ reason }).strict();
+/** The booking version the staff member was looking at (from GET /admin/bookings/:id). */
+const expectedVersion = z.number().int().positive();
+const ReasonBody = z.object({ reason, expectedVersion }).strict();
 const SearchQuery = z.object({
   status: z
     .string()
@@ -63,11 +65,29 @@ const ManualBody = z
     reason,
   })
   .strict();
-const AssignBody = z.object({ workerId: z.uuid(), reason }).strict();
-const RescheduleBody = z.object({ startAt: z.iso.datetime({ offset: true }), reason }).strict();
-const CancelBody = z
-  .object({ reason, fault: z.enum(['CUSTOMER', 'COMPANY', 'NO_WORKER']) })
+const AssignBody = z.object({ workerId: z.uuid(), reason, expectedVersion }).strict();
+const RescheduleBody = z
+  .object({ startAt: z.iso.datetime({ offset: true }), reason, expectedVersion })
   .strict();
+const CancelBody = z
+  .object({ reason, fault: z.enum(['CUSTOMER', 'COMPANY', 'NO_WORKER']), expectedVersion })
+  .strict();
+
+/**
+ * The context for a staff action on booking `id`: the written reason, and the version the
+ * staff member saw, so a change made meanwhile by someone else is not silently overwritten.
+ */
+function acting(
+  actor: ActionContext,
+  id: string,
+  body: { reason: string; expectedVersion: number },
+): ActionContext {
+  return {
+    ...actor,
+    reason: body.reason,
+    expectedBookingVersion: { bookingId: id, version: body.expectedVersion },
+  };
+}
 
 /**
  * Operations on bookings. Every change requires a reason, which is written — with the
@@ -138,13 +158,9 @@ export class AdminBookingController {
     @Body(new ZodPipe(AssignBody)) body: z.infer<typeof AssignBody>,
   ) {
     await this.bookings.assertCity(principal, id, 'booking.assign');
-    await this.dispatch.unassign(
-      id,
-      'REASSIGNED',
-      body.reason,
-      { ...actor, reason: body.reason },
-      { assignToWorkerId: body.workerId },
-    );
+    await this.dispatch.unassign(id, 'REASSIGNED', body.reason, acting(actor, id, body), {
+      assignToWorkerId: body.workerId,
+    });
     return this.bookings.detail(principal, id);
   }
 
@@ -158,7 +174,7 @@ export class AdminBookingController {
     @Body(new ZodPipe(ReasonBody)) body: z.infer<typeof ReasonBody>,
   ) {
     await this.bookings.assertCity(principal, id, 'booking.assign');
-    const result = await this.bookings.redispatch({ ...actor, reason: body.reason }, id);
+    const result = await this.bookings.redispatch(acting(actor, id, body), id);
     return { ...result, booking: await this.bookings.detail(principal, id) };
   }
 
@@ -171,10 +187,12 @@ export class AdminBookingController {
     @Body(new ZodPipe(RescheduleBody)) body: z.infer<typeof RescheduleBody>,
   ) {
     await this.bookings.assertCity(principal, id, 'booking.reschedule');
-    await this.lifecycle.reschedule(id, new Date(body.startAt), body.reason, {
-      ...actor,
-      reason: body.reason,
-    });
+    await this.lifecycle.reschedule(
+      id,
+      new Date(body.startAt),
+      body.reason,
+      acting(actor, id, body),
+    );
     return this.bookings.detail(principal, id);
   }
 
@@ -187,10 +205,12 @@ export class AdminBookingController {
     @Body(new ZodPipe(CancelBody)) body: z.infer<typeof CancelBody>,
   ) {
     await this.bookings.assertCity(principal, id, 'booking.cancel');
-    const result = await this.cancellation.cancel(id, body.reason, body.fault, {
-      ...actor,
-      reason: body.reason,
-    });
+    const result = await this.cancellation.cancel(
+      id,
+      body.reason,
+      body.fault,
+      acting(actor, id, body),
+    );
     return { ...result, booking: await this.bookings.detail(principal, id) };
   }
 
@@ -206,7 +226,7 @@ export class AdminBookingController {
     await this.lifecycle.recordFieldEvent(
       id,
       'CUSTOMER_NO_SHOW',
-      { ...actor, reason: body.reason },
+      acting(actor, id, body),
       body.reason,
     );
     return this.bookings.detail(principal, id);
@@ -222,10 +242,12 @@ export class AdminBookingController {
     @Body(new ZodPipe(ReasonBody)) body: z.infer<typeof ReasonBody>,
   ) {
     await this.bookings.assertCity(principal, id, 'booking.mark_no_show');
-    const result = await this.dispatch.unassign(id, 'WORKER_NO_SHOW', body.reason, {
-      ...actor,
-      reason: body.reason,
-    });
+    const result = await this.dispatch.unassign(
+      id,
+      'WORKER_NO_SHOW',
+      body.reason,
+      acting(actor, id, body),
+    );
     return { ...result, booking: await this.bookings.detail(principal, id) };
   }
 
@@ -239,10 +261,11 @@ export class AdminBookingController {
     @Body(new ZodPipe(ReasonBody)) body: z.infer<typeof ReasonBody>,
   ) {
     await this.bookings.assertCity(principal, id, 'booking.override');
-    const result = await this.dispatch.confirmWithoutPrepayment(id, body.reason, {
-      ...actor,
-      reason: body.reason,
-    });
+    const result = await this.dispatch.confirmWithoutPrepayment(
+      id,
+      body.reason,
+      acting(actor, id, body),
+    );
     return { ...result, booking: await this.bookings.detail(principal, id) };
   }
 
@@ -256,11 +279,7 @@ export class AdminBookingController {
     @Body(new ZodPipe(ReasonBody)) body: z.infer<typeof ReasonBody>,
   ) {
     await this.bookings.assertCity(principal, id, 'booking.override');
-    await this.lifecycle.startService(
-      id,
-      { ...actor, reason: body.reason },
-      { overrideReason: body.reason },
-    );
+    await this.lifecycle.startService(id, acting(actor, id, body), { overrideReason: body.reason });
     return this.bookings.detail(principal, id);
   }
 
@@ -274,7 +293,7 @@ export class AdminBookingController {
     @Body(new ZodPipe(ReasonBody)) body: z.infer<typeof ReasonBody>,
   ) {
     await this.bookings.assertCity(principal, id, 'booking.reschedule');
-    await this.bookings.hold({ ...actor, reason: body.reason }, id);
+    await this.bookings.hold(acting(actor, id, body), id);
     return this.bookings.detail(principal, id);
   }
 
@@ -288,7 +307,7 @@ export class AdminBookingController {
     @Body(new ZodPipe(ReasonBody)) body: z.infer<typeof ReasonBody>,
   ) {
     await this.bookings.assertCity(principal, id, 'booking.reschedule');
-    const result = await this.bookings.releaseHold({ ...actor, reason: body.reason }, id);
+    const result = await this.bookings.releaseHold(acting(actor, id, body), id);
     return { ...result, booking: await this.bookings.detail(principal, id) };
   }
 }

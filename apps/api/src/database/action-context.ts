@@ -16,6 +16,12 @@ export interface ActionContext {
    * and history row written in the transaction.
    */
   readonly reason?: string | null;
+  /**
+   * The booking version the actor's screen showed. When set, the transaction fails with
+   * STALE_BOOKING if that booking changed since, instead of overwriting someone else's
+   * change (two staff acting on the same booking). Checked under the booking's row lock.
+   */
+  readonly expectedBookingVersion?: { readonly bookingId: string; readonly version: number };
 }
 
 export function systemContext(requestId: string): ActionContext {

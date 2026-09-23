@@ -224,6 +224,8 @@ export class AdminBookingService {
       id: b.id,
       bookingCode: b.booking_code,
       status: b.status,
+      /** Send back as expectedVersion with any change, so concurrent edits are detected. */
+      version: b.version,
       source: b.source,
       bookingType: b.booking_type,
       service: b.service,

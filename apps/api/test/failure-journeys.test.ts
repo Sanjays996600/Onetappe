@@ -289,8 +289,10 @@ describe('dispatch failures', () => {
 
     const dispatcher = await createStaff(app, ['DISPATCHER']);
     const ops = api.as(await signInStaff(api, dispatcher));
+    const seen = await ops.get<Json>(`/admin/bookings/${bookingId}`);
     const res = await ops.post<Json>(`/admin/bookings/${bookingId}/worker-no-show`, {
       reason: 'Worker unreachable 30 minutes after ETA',
+      expectedVersion: seen.body['version'],
     });
     expect(res.status).toBe(201);
     expect(res.body['offers']).toHaveLength(1);
@@ -621,10 +623,14 @@ describe('access control and personal data', () => {
       .set({ mfa_verified_at: new Date(Date.now() - 3_600_000) })
       .where('user_id', '=', head.userId)
       .execute();
+    const { version } = (
+      await api.as(token).get<Json>(`/admin/bookings/${booking.body['id'] as string}`)
+    ).body;
     const blocked = await api
       .as(token)
       .post<Json>(`/admin/bookings/${booking.body['id'] as string}/confirm-without-prepayment`, {
-        reason: 'Customer will pay cash',
+        reason: 'Corporate client is invoiced after the service',
+        expectedVersion: version,
       });
     expect((blocked.body['error'] as Json)['code']).toBe('MFA_REQUIRED');
     expect(
@@ -633,7 +639,8 @@ describe('access control and personal data', () => {
     const allowed = await api
       .as(token)
       .post<Json>(`/admin/bookings/${booking.body['id'] as string}/confirm-without-prepayment`, {
-        reason: 'Customer will pay cash',
+        reason: 'Corporate client is invoiced after the service',
+        expectedVersion: version,
       });
     expect(allowed.status).toBe(201);
     expect((allowed.body['booking'] as Json)['status']).toBe('CONFIRMED');

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { sql } from 'kysely';
 import {
   resolveBookingTransition,
   type BookingEvent,
@@ -9,6 +10,7 @@ import type { ActionContext } from '../database/action-context.js';
 import { setEvent, type Tx } from '../database/transaction.js';
 import {
   BusinessRuleError,
+  ConflictError,
   ForbiddenError,
   NotFoundError,
   ValidationError,
@@ -55,11 +57,13 @@ export class BookingTransitionService {
         'scheduled_start',
         'scheduled_end',
         'version',
+        sql<string>`current_setting('app.expected_booking', true)`.as('expected'),
       ])
       .where('id', '=', bookingId)
       .forUpdate()
       .executeTakeFirst();
     if (!row) throw new NotFoundError('Booking', bookingId);
+    await this.checkExpectedVersion(tx, row);
     return {
       id: row.id,
       bookingCode: row.booking_code,
@@ -72,6 +76,26 @@ export class BookingTransitionService {
       scheduledEnd: row.scheduled_end,
       version: row.version,
     };
+  }
+
+  /**
+   * Enforces ActionContext.expectedBookingVersion on the first lock of that booking in the
+   * transaction (later locks see this transaction's own changes, so the check is spent).
+   */
+  private async checkExpectedVersion(
+    tx: Tx,
+    row: { id: string; booking_code: string; version: number; expected: string | null },
+  ): Promise<void> {
+    const [bookingId, version] = (row.expected ?? '').split(':');
+    if (bookingId !== row.id) return;
+    await sql`SELECT set_config('app.expected_booking', '', true)`.execute(tx);
+    if (Number(version) !== row.version) {
+      throw new ConflictError(
+        'STALE_BOOKING',
+        `Booking ${row.booking_code} was changed by someone else since you loaded it; refresh and try again`,
+        { expectedVersion: Number(version), actualVersion: row.version },
+      );
+    }
   }
 
   /**
