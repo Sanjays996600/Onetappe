@@ -15,6 +15,7 @@ interface Session {
   setLocale: (locale: Locale) => void;
   signIn: (session: Tokens) => Promise<void>;
   signOut: () => Promise<void>;
+  signOutEverywhere: () => Promise<void>;
   isSignedIn: () => Promise<boolean>;
 }
 
@@ -39,6 +40,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         } catch {
           // Signing out locally is what matters; the server session expires on its own.
         }
+        await tokens.clear();
+      },
+      signOutEverywhere: async () => {
+        // Must reach the server: the point is to end sessions on phones we do not hold.
+        await api.auth.logoutAll();
         await tokens.clear();
       },
       isSignedIn: async () => (await tokens.get()) !== null,

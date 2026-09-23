@@ -192,11 +192,9 @@ export class DispatchService {
         const mine = live.find(
           (a) => a.worker_id === context.actorUserId && a.status === 'ACCEPTED',
         );
+        // Another worker's job is answered like a missing one.
         if (context.source === 'WORKER_APP' && !mine) {
-          throw new ForbiddenError(
-            'NOT_YOUR_JOB',
-            'You are not the assigned worker for this booking',
-          );
+          throw new NotFoundError('Job', bookingId);
         }
       }
       if (!['CONFIRMED', 'ASSIGNED', 'EN_ROUTE'].includes(booking.status)) {
@@ -383,8 +381,9 @@ export class DispatchService {
       .forUpdate()
       .executeTakeFirstOrThrow();
 
+    // Another worker's offer is answered like a missing one: ids cannot be probed.
     if (context.source === 'WORKER_APP' && context.actorUserId !== assignment.worker_id) {
-      throw new ForbiddenError('NOT_YOUR_OFFER', 'This offer belongs to another worker');
+      throw new NotFoundError('Assignment', assignmentId);
     }
     if (
       context.source !== 'WORKER_APP' &&

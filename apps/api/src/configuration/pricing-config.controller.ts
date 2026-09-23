@@ -15,6 +15,7 @@ import { z } from 'zod';
 import {
   Actor,
   CurrentPrincipal,
+  ForApp,
   RequirePermissions,
   RequireRecentMfa,
 } from '../auth/decorators.js';
@@ -146,6 +147,7 @@ const PERMISSION = 'pricing.manage';
  * Writes need pricing.manage, a reason and a recent authenticator check.
  */
 @Controller('admin/config')
+@ForApp('ADMIN_WEB')
 @RequirePermissions(PERMISSION)
 export class PricingConfigController {
   constructor(

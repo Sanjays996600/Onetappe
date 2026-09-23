@@ -116,6 +116,55 @@ export class AdminPeopleService {
     return { name: u.full_name, phone: u.phone_e164, email: u.email, addresses };
   }
 
+  /**
+   * Ends every session a customer or worker has in their phone app (lost or stolen phone,
+   * account takeover). Their next request is refused and they sign in again with an SMS
+   * code to the number on the account.
+   */
+  async revokeSessions(
+    context: ActionContext,
+    userId: string,
+    app: 'CUSTOMER_APP' | 'WORKER_APP',
+    reason: string,
+  ) {
+    const revoked = await inTransaction(this.db, { ...context, reason }, async (tx) => {
+      const profile =
+        app === 'CUSTOMER_APP'
+          ? await tx
+              .selectFrom('customer_profile')
+              .select('user_id')
+              .where('user_id', '=', userId)
+              .executeTakeFirst()
+          : await tx
+              .selectFrom('worker_profile')
+              .select('user_id')
+              .where('user_id', '=', userId)
+              .executeTakeFirst();
+      if (!profile) throw new NotFoundError(app === 'CUSTOMER_APP' ? 'Customer' : 'Worker', userId);
+      const rows = await tx
+        .updateTable('auth_session')
+        .set({ revoked_at: new Date(), revoke_reason: 'REVOKED_BY_STAFF' })
+        .where('user_id', '=', userId)
+        .where('client_app', '=', app)
+        .where('revoked_at', 'is', null)
+        .returning('id')
+        .execute();
+      await this.audit.record(
+        context,
+        {
+          action: 'LOGOUT',
+          entityType: 'app_user',
+          entityId: userId,
+          reason,
+          metadata: { app, sessions: rows.length, by: 'STAFF', everywhere: true },
+        },
+        tx,
+      );
+      return rows.length;
+    });
+    return { revokedSessions: revoked };
+  }
+
   // ---- Workers ----
 
   async workers(query: { status: string | null; limit: number }) {

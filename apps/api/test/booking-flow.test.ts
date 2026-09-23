@@ -356,12 +356,12 @@ describe('HH60 end-to-end booking', () => {
     await expect(
       app.dispatch.accept(offers[0]!.assignmentId, workerContext(other)),
     ).rejects.toMatchObject({
-      code: 'NOT_YOUR_OFFER',
+      code: 'ASSIGNMENT_NOT_FOUND',
     });
     await app.dispatch.accept(offers[0]!.assignmentId, workerContext(assigned));
     await expect(
       app.lifecycle.recordFieldEvent(booking.id, 'START_TRAVEL', workerContext(other)),
-    ).rejects.toMatchObject({ code: 'NOT_YOUR_JOB' });
+    ).rejects.toMatchObject({ code: 'JOB_NOT_FOUND' });
   });
 });
 
@@ -494,7 +494,7 @@ describe('cancellation and expiry', () => {
     await expect(
       app.lifecycle.cancel(booking.id, 'x', customerContext(b.userId)),
     ).rejects.toMatchObject({
-      code: 'NOT_YOUR_BOOKING',
+      code: 'BOOKING_NOT_FOUND',
     });
   });
 

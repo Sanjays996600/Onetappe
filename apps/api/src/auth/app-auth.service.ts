@@ -63,6 +63,23 @@ export class AppAuthService {
         );
       }
 
+      // Staff accounts use the operations panel (password + authenticator), never a phone
+      // app: one identity, one way in.
+      const staffRole = await tx
+        .selectFrom('user_role as ur')
+        .innerJoin('role as r', 'r.code', 'ur.role_code')
+        .select('ur.user_id')
+        .where('ur.user_id', '=', user.id)
+        .where('ur.revoked_at', 'is', null)
+        .where('r.is_staff', '=', true)
+        .executeTakeFirst();
+      if (staffRole) {
+        throw new ForbiddenError(
+          'STAFF_ACCOUNT',
+          'This number belongs to a staff account. Staff sign in to the operations panel.',
+        );
+      }
+
       let isNew: boolean;
       let hasAddress: boolean | null = null;
       let workerStatus: string | null = null;

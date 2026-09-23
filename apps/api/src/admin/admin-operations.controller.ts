@@ -88,6 +88,20 @@ const IncidentActionBody = z
   })
   .strict();
 
+const OnCallBody = z
+  .object({
+    userId: z.uuid(),
+    level: z.number().int().min(1).max(3),
+    phone: z
+      .string()
+      .regex(/^\+91[6-9]\d{9}$/)
+      .nullable()
+      .default(null),
+    reason: z.string().trim().min(5).max(500),
+  })
+  .strict();
+const ReasonOnly = z.object({ reason: z.string().trim().min(5).max(500) }).strict();
+
 const AuditQuery = LimitQuery.extend({
   entityType: z
     .string()
@@ -268,6 +282,42 @@ export class AdminOperationsController {
   @RequirePermissions('safety.read')
   incident(@Param('id', ParseUUIDPipe) id: string) {
     return this.safety.detail(id);
+  }
+
+  /** "I have it": stops paging. Safe to repeat. */
+  @Post('safety-incidents/:id/acknowledge')
+  @HttpCode(200)
+  @RequirePermissions('safety.manage')
+  acknowledgeIncident(@Actor() actor: ActionContext, @Param('id', ParseUUIDPipe) id: string) {
+    return this.safety.acknowledge(actor, id);
+  }
+
+  @Get('safety/on-call')
+  @RequirePermissions('safety.read')
+  onCall() {
+    return this.safety.onCall();
+  }
+
+  @Post('safety/on-call')
+  @RequirePermissions('safety.manage')
+  @RequireRecentMfa()
+  addOnCall(
+    @Actor() actor: ActionContext,
+    @Body(new ZodPipe(OnCallBody)) body: z.infer<typeof OnCallBody>,
+  ) {
+    return this.safety.addOnCall(actor, body);
+  }
+
+  @Post('safety/on-call/:id/remove')
+  @HttpCode(200)
+  @RequirePermissions('safety.manage')
+  @RequireRecentMfa()
+  removeOnCall(
+    @Actor() actor: ActionContext,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodPipe(ReasonOnly)) body: z.infer<typeof ReasonOnly>,
+  ) {
+    return this.safety.removeOnCall(actor, id, body.reason);
   }
 
   @Post('safety-incidents/:id/actions')

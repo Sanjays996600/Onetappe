@@ -107,13 +107,13 @@ export default function JobScreen() {
           {part(a.cityName)} {part(a.pincode)}
         </Body>
         {part(a.accessNotes) ? <Row label={t.accessNotes} value={part(a.accessNotes)} /> : null}
-        {!FINAL.has(job.status) ? (
+        {a.lat !== null && a.lng !== null ? (
           <Button
             kind="secondary"
             label={t.navigate}
             onPress={() =>
               void Linking.openURL(
-                `https://www.google.com/maps/dir/?api=1&destination=${String(a.lat)},${String(a.lng)}`,
+                `https://www.google.com/maps/dir/?api=1&destination=${String(a.lat)},${String(a.lng ?? '')}`,
               )
             }
           />

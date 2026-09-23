@@ -14,6 +14,8 @@ export const NOTIFICATION_EVENTS = [
   'REFUND_COMPLETED',
   'JOB_OFFER',
   'JOB_CANCELLED',
+  // Staff: pages on-call safety staff for a critical incident (never switched off).
+  'SAFETY_ALERT',
 ] as const;
 
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];

@@ -224,8 +224,8 @@ describe('phones losing signal', () => {
       const retry = await worker.post<Json>(`/worker/jobs/${bookingId}/${step}`, body);
       expect([first.status, retry.status], step).toEqual([200, 200]);
       expect(retry.body['status'], step).toBe(status);
-      // A different worker cannot ride on the replay rule.
-      expect((await other.post(`/worker/jobs/${bookingId}/${step}`, body)).status, step).toBe(403);
+      // A different worker cannot ride on the replay rule (their answer: no such job).
+      expect((await other.post(`/worker/jobs/${bookingId}/${step}`, body)).status, step).toBe(404);
     }
     const events = (await history(bookingId)).map((h) => h.event);
     for (const event of ['START_TRAVEL', 'MARK_ARRIVED', 'START_SERVICE', 'COMPLETE_SERVICE'])
@@ -249,7 +249,7 @@ describe('phones losing signal', () => {
     const other = await workers[1 - holder]!.api.post<ErrorBody>(
       `/worker/offers/${offerId}/accept`,
     );
-    expect(other.body.error.code).toBe('NOT_YOUR_OFFER');
+    expect(other.body.error.code).toBe('ASSIGNMENT_NOT_FOUND');
     const accepted = (await history(bookingId)).filter((h) => h.event === 'WORKER_ACCEPTED');
     expect(accepted).toHaveLength(1);
   });

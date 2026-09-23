@@ -57,10 +57,10 @@ export const JobSchema = z.object({
     landmark: z.unknown(),
     pincode: z.unknown(),
     cityName: z.unknown(),
-    lat: z.number(),
-    lng: z.number(),
+    /** Exact position, door, notes and phone: only while the job is active (else null). */
+    lat: z.number().nullable(),
+    lng: z.number().nullable(),
     accessNotes: z.unknown(),
-    /** Only while the job is active. */
     contactPhone: z.string().nullable(),
   }),
   notes: z.string().nullable(),

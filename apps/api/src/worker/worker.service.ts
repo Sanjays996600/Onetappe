@@ -462,7 +462,10 @@ export class WorkerService {
       .execute();
     const status = b.status as BookingStatus;
     const address = b.address_snapshot as Record<string, unknown>;
-    const contactVisible = CONTACT_VISIBLE.includes(status) && assignment.status === 'ACCEPTED';
+    // The door, the gate code, the exact pin and the phone number are needed only while the
+    // job is active. Afterwards the worker keeps the area (for their history), nothing more.
+    const active = CONTACT_VISIBLE.includes(status) && assignment.status === 'ACCEPTED';
+    const detail = (key: string) => (active ? (address[key] ?? null) : null);
     return {
       bookingId: b.id,
       bookingCode: b.booking_code,
@@ -472,19 +475,18 @@ export class WorkerService {
       end: b.scheduled_end.toISOString(),
       customerFirstName: b.customer_name?.split(/\s+/)[0] ?? null,
       address: {
-        houseNumber: address['houseNumber'],
-        building: address['building'],
-        street: address['street'],
-        landmark: address['landmark'],
+        houseNumber: detail('houseNumber'),
+        building: detail('building'),
+        street: detail('street'),
+        landmark: detail('landmark'),
         pincode: address['pincode'],
         cityName: address['cityName'],
-        lat: Number(address['lat']),
-        lng: Number(address['lng']),
-        accessNotes: address['accessNotes'],
-        // The number is shown only while the job is active.
-        contactPhone: contactVisible ? address['contactPhone'] : null,
+        lat: active ? Number(address['lat']) : null,
+        lng: active ? Number(address['lng']) : null,
+        accessNotes: detail('accessNotes'),
+        contactPhone: detail('contactPhone'),
       },
-      notes: b.customer_notes,
+      notes: active ? b.customer_notes : null,
       tasks,
     };
   }

@@ -1,8 +1,16 @@
 import { Body, Controller, HttpCode, Injectable, Post } from '@nestjs/common';
 import { z } from 'zod';
+import type { ActionContext } from '../database/action-context.js';
 import { ZodPipe } from '../common/http/zod.pipe.js';
 import { AppAuthService } from './app-auth.service.js';
-import { CurrentPrincipal, ForApp, Public, RequestMeta } from './decorators.js';
+import {
+  Actor,
+  AllowInactiveWorker,
+  CurrentPrincipal,
+  ForApp,
+  Public,
+  RequestMeta,
+} from './decorators.js';
 import { normaliseIndianMobile } from './otp/phone.js';
 import { OtpService, type OtpClientApp } from './otp/otp.service.js';
 import type { Principal } from './principal.js';
@@ -148,9 +156,18 @@ export class SessionController {
   }
 
   @Post('logout')
+  @AllowInactiveWorker()
   @HttpCode(204)
   async logout(@CurrentPrincipal() principal: Principal, @RequestMeta() meta: Meta): Promise<void> {
     await this.sessions.revoke(principal.sessionId, 'LOGOUT', meta.requestId);
+  }
+
+  /** Signs this person out of every device (e.g. a lost phone), including this one. */
+  @Post('logout-all')
+  @AllowInactiveWorker()
+  @HttpCode(204)
+  async logoutEverywhere(@Actor() actor: ActionContext): Promise<void> {
+    await this.sessions.revokeEverywhere(actor, 'LOGOUT_ALL');
   }
 
   @Post('staff/login')

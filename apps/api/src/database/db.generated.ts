@@ -690,6 +690,8 @@ export interface RolePermission {
 }
 
 export interface SafetyIncident {
+  acknowledged_at: Timestamp | null;
+  acknowledged_by: string | null;
   booking_id: string | null;
   category: string;
   closed_at: Timestamp | null;
@@ -702,7 +704,9 @@ export interface SafetyIncident {
   lat: Numeric | null;
   lng: Numeric | null;
   location_text: string | null;
+  next_page_at: Timestamp | null;
   occurred_at: Generated<Timestamp>;
+  pages_sent: Generated<number>;
   reported_at: Generated<Timestamp>;
   reported_by_user_id: string;
   reporter_role: string;
@@ -725,6 +729,17 @@ export interface SafetyIncidentEvent {
   occurred_at: Generated<Timestamp>;
   source: string;
   to_status: string | null;
+}
+
+export interface SafetyOnCall {
+  added_at: Generated<Timestamp>;
+  added_by: string;
+  id: Generated<string>;
+  level: number;
+  reason: string;
+  removed_at: Timestamp | null;
+  removed_by: string | null;
+  user_id: string;
 }
 
 export interface Service {
@@ -1226,6 +1241,7 @@ export interface DB {
   role_permission: RolePermission;
   safety_incident: SafetyIncident;
   safety_incident_event: SafetyIncidentEvent;
+  safety_on_call: SafetyOnCall;
   service: Service;
   service_category: ServiceCategory;
   service_option: ServiceOption;

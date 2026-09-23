@@ -11,7 +11,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { z } from 'zod';
-import { Actor, ForApp } from '../auth/decorators.js';
+import { Actor, AllowInactiveWorker, ForApp } from '../auth/decorators.js';
 import { BookingLifecycleService } from '../booking/booking-lifecycle.service.js';
 import { DispatchService } from '../booking/dispatch.service.js';
 import { ZodPipe } from '../common/http/zod.pipe.js';
@@ -116,11 +116,13 @@ export class WorkerController {
   ) {}
 
   @Get('me')
+  @AllowInactiveWorker()
   me(@Actor() actor: ActionContext) {
     return this.workers.profile(actor.actorUserId ?? '');
   }
 
   @Patch('me')
+  @AllowInactiveWorker()
   update(
     @Actor() actor: ActionContext,
     @Body(new ZodPipe(ProfileBody)) body: z.infer<typeof ProfileBody>,
@@ -129,6 +131,7 @@ export class WorkerController {
   }
 
   @Post('devices')
+  @AllowInactiveWorker()
   @HttpCode(204)
   async device(
     @Actor() actor: ActionContext,
@@ -138,11 +141,13 @@ export class WorkerController {
   }
 
   @Get('me/verifications')
+  @AllowInactiveWorker()
   verifications(@Actor() actor: ActionContext) {
     return this.workers.verifications(actor.actorUserId ?? '');
   }
 
   @Post('me/documents')
+  @AllowInactiveWorker()
   uploadTarget(
     @Actor() actor: ActionContext,
     @Body(new ZodPipe(UploadBody)) body: z.infer<typeof UploadBody>,
@@ -151,6 +156,7 @@ export class WorkerController {
   }
 
   @Post('me/verifications')
+  @AllowInactiveWorker()
   submit(
     @Actor() actor: ActionContext,
     @Body(new ZodPipe(SubmitBody)) body: z.infer<typeof SubmitBody>,
@@ -159,6 +165,7 @@ export class WorkerController {
   }
 
   @Get('me/training')
+  @AllowInactiveWorker()
   training(@Actor() actor: ActionContext) {
     return this.workers.training(actor.actorUserId ?? '');
   }
@@ -281,11 +288,13 @@ export class WorkerController {
   }
 
   @Get('earnings')
+  @AllowInactiveWorker()
   earnings(@Actor() actor: ActionContext) {
     return this.workers.earnings(actor.actorUserId ?? '');
   }
 
   @Post('support-cases')
+  @AllowInactiveWorker()
   openCase(
     @Actor() actor: ActionContext,
     @IdempotencyKey() key: string,
@@ -300,6 +309,7 @@ export class WorkerController {
   }
 
   @Post('sos')
+  @AllowInactiveWorker()
   sos(
     @Actor() actor: ActionContext,
     @IdempotencyKey() key: string,

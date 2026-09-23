@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto';
 
 /**
- * Freshly generated secrets, as a staging or production deployment must have. The test
+ * Freshly generated secrets and a TLS database URL, as a staging or production deployment
+ * must have. The test
  * fixtures in env.ts are deliberately refused outside APP_ENV=local/test.
  */
 export function deployedSecrets(): Record<string, string> {
@@ -13,5 +14,7 @@ export function deployedSecrets(): Record<string, string> {
     DATA_ENCRYPTION_KEY: randomBytes(32).toString('base64'),
     SANDBOX_WEBHOOK_SECRET: random(),
     METRICS_TOKEN: random(),
+    // Deployed databases are reached over verified TLS (never connected to by these tests).
+    DATABASE_URL: 'postgres://onetappe_api:unused@db.internal:5432/onetappe?sslmode=verify-full',
   };
 }

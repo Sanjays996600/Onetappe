@@ -4,6 +4,7 @@ import { Inject } from '@nestjs/common';
 import { z } from 'zod';
 import {
   Actor,
+  AllowInactiveWorker,
   CurrentPrincipal,
   ForApp,
   Public,
@@ -57,6 +58,7 @@ export class LegalDocumentsController {
 /** The signed-in person's acceptances and choices. */
 @Controller('me/consents')
 @ForApp('CUSTOMER_APP', 'WORKER_APP')
+@AllowInactiveWorker()
 export class ConsentController {
   constructor(private readonly legal: LegalService) {}
 

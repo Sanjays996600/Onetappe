@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { sql, type Kysely } from 'kysely';
 import { z } from 'zod';
-import { Actor, CurrentPrincipal, RequirePermissions } from '../auth/decorators.js';
+import { Actor, CurrentPrincipal, ForApp, RequirePermissions } from '../auth/decorators.js';
 import type { Principal } from '../auth/principal.js';
 import { BusinessRuleError, NotFoundError } from '../common/errors.js';
 import { ZodPipe } from '../common/http/zod.pipe.js';
@@ -175,6 +175,7 @@ const PERMISSION = 'catalog.manage';
  * current worker payout, so nothing is ever offered unpriced or unpaid.
  */
 @Controller('admin/config')
+@ForApp('ADMIN_WEB')
 @RequirePermissions(PERMISSION)
 export class CatalogConfigController {
   constructor(@Inject(DATABASE) private readonly db: Kysely<DB>) {}

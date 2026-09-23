@@ -10,7 +10,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { z } from 'zod';
-import { Actor, Public, RequestMeta, RequirePermissions } from '../auth/decorators.js';
+import { Actor, ForApp, Public, RequestMeta, RequirePermissions } from '../auth/decorators.js';
 import { ZodPipe } from '../common/http/zod.pipe.js';
 import type { ActionContext } from '../database/action-context.js';
 import { IntegrationMonitor } from './integration-monitor.service.js';
@@ -25,6 +25,7 @@ const NoteBody = z.object({ note: z.string().trim().min(5).max(500) });
 
 /** Integration health and failed-event handling for operations. */
 @Controller('admin/integrations')
+@ForApp('ADMIN_WEB')
 export class IntegrationsAdminController {
   constructor(private readonly monitor: IntegrationMonitor) {}
 

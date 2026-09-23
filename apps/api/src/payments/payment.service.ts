@@ -8,7 +8,6 @@ import { Clock } from '../common/clock.js';
 import {
   AppError,
   BusinessRuleError,
-  ForbiddenError,
   NotFoundError,
   ServiceUnavailableError,
   UnauthorizedError,
@@ -71,8 +70,9 @@ export class PaymentService {
   async initiate(bookingId: string, context: ActionContext): Promise<PaymentInitiation> {
     const prepared = await inTransaction(this.db, context, async (tx) => {
       const booking = await this.transitions.lock(tx, bookingId);
+      // Someone else's booking is answered like a missing one: ids cannot be probed.
       if (context.source === 'CUSTOMER_APP' && booking.customerUserId !== context.actorUserId) {
-        throw new ForbiddenError('NOT_YOUR_BOOKING', 'This booking belongs to another customer');
+        throw new NotFoundError('Booking', bookingId);
       }
       const row = await tx
         .selectFrom('booking')
@@ -233,8 +233,9 @@ export class PaymentService {
       .where('p.booking_id', '=', bookingId)
       .executeTakeFirst();
     if (!payment) throw new NotFoundError('Payment', paymentId);
+    // Someone else's payment is answered like a missing one.
     if (context.source === 'CUSTOMER_APP' && payment.customer_user_id !== context.actorUserId) {
-      throw new ForbiddenError('NOT_YOUR_BOOKING', 'This booking belongs to another customer');
+      throw new NotFoundError('Payment', paymentId);
     }
     if (['CREATED', 'AUTHORIZED'].includes(payment.status) && payment.provider_order_id) {
       try {

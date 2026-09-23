@@ -1,7 +1,8 @@
 import { Body, Controller, Get, Inject, Post, Put } from '@nestjs/common';
 import type { Kysely } from 'kysely';
 import { z } from 'zod';
-import { Actor, RequirePermissions } from '../auth/decorators.js';
+import { Actor, ForApp, RequirePermissions } from '../auth/decorators.js';
+import { BusinessRuleError } from '../common/errors.js';
 import { ZodPipe } from '../common/http/zod.pipe.js';
 import type { ActionContext } from '../database/action-context.js';
 import { DATABASE } from '../database/database.module.js';
@@ -38,6 +39,7 @@ const RouteBody = z
  * were sent with). Routes decide which channels an event goes out on.
  */
 @Controller('admin/config/notifications')
+@ForApp('ADMIN_WEB')
 @RequirePermissions('notification.manage')
 export class NotificationConfigController {
   constructor(@Inject(DATABASE) private readonly db: Kysely<DB>) {}
@@ -108,6 +110,13 @@ export class NotificationConfigController {
     @Actor() actor: ActionContext,
     @Body(new ZodPipe(RouteBody)) body: z.infer<typeof RouteBody>,
   ) {
+    // Safety paging cannot be switched off from the panel (it would silence SOS alerts).
+    if (body.event === 'SAFETY_ALERT' && !body.isEnabled) {
+      throw new BusinessRuleError(
+        'SAFETY_ALERT_REQUIRED',
+        'Safety alerts cannot be switched off; change the on-call roster instead',
+      );
+    }
     return inTransaction(this.db, { ...actor, reason: body.reason }, (tx) =>
       tx
         .insertInto('notification_route')

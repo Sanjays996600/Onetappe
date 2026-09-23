@@ -322,7 +322,10 @@ describe('dispatch failures', () => {
     const online = await worker.post<Json>('/worker/me/presence', { online: true });
     expect(online.status).toBe(403);
     expect((online.body['error'] as Json)['code']).toBe('WORKER_NOT_ACTIVE');
-    expect((await worker.get<Json[]>('/worker/offers')).body).toEqual([]);
+    // Offers and jobs are closed to them altogether, not just empty.
+    const offers = await worker.get<Json>('/worker/offers');
+    expect(offers.status).toBe(403);
+    expect((offers.body['error'] as Json)['code']).toBe('WORKER_NOT_ACTIVE');
   });
 });
 
@@ -534,13 +537,13 @@ describe('abuse and concurrency', () => {
       ((await intruder.post<Json>(`/worker/offers/${offerId}/accept`)).body['error'] as Json)[
         'code'
       ],
-    ).toBe('NOT_YOUR_OFFER');
+    ).toBe('ASSIGNMENT_NOT_FOUND');
     await workers[holderIndex]!.api.post(`/worker/offers/${offerId}/accept`);
     expect(
       ((await intruder.post<Json>(`/worker/jobs/${bookingId}/en-route`)).body['error'] as Json)[
         'code'
       ],
-    ).toBe('NOT_YOUR_JOB');
+    ).toBe('JOB_NOT_FOUND');
     // Skipping steps is refused by the state machine even for the right worker.
     expect(
       (

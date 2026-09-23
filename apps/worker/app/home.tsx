@@ -1,5 +1,6 @@
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
+import { Alert } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import type { Offer, WorkerProfile } from '@onetappe/api-client';
 import {
@@ -29,7 +30,7 @@ type Problem = ReturnType<typeof describeError>;
 /** W-07 / W-08 / W-09: application status, online switch, offers and the current job. */
 export default function Home() {
   const router = useRouter();
-  const { api, locale, setLocale, signOut, t } = useSession();
+  const { api, locale, setLocale, signOut, signOutEverywhere, t } = useSession();
   const me = useLoad(() => api.worker.me(), []);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [busy, setBusy] = useState(false);
@@ -154,6 +155,22 @@ export default function Home() {
         kind="secondary"
         label={t.language}
         onPress={() => setLocale(locale === 'en' ? 'hi' : 'en')}
+      />
+      <Button
+        kind="secondary"
+        label={t.signOutEverywhere}
+        onPress={() =>
+          void signOutEverywhere().then(
+            () => {
+              router.replace('/sign-in');
+            },
+            (error: unknown) => {
+              // The other phones are still signed in: say so, never pretend it worked.
+              const problem = describeError(error, locale);
+              Alert.alert(t.signOutEverywhere, problem.message);
+            },
+          )
+        }
       />
       <Button
         kind="secondary"

@@ -50,6 +50,14 @@ describe('deployed environments refuse known or weak secrets', () => {
     }
   });
 
+  it.each([
+    ['no TLS', 'postgres://u:p@db.internal:5432/onetappe'],
+    ['TLS without certificate checks', 'postgres://u:p@db.internal:5432/onetappe?sslmode=require'],
+    ['TLS switched off', 'postgres://u:p@db.internal:5432/onetappe?sslmode=disable'],
+  ])('refuses a database connection with %s', (_label, url) => {
+    expect(() => loadEnv(staging({ DATABASE_URL: url }))).toThrow(/sslmode=verify-full/);
+  });
+
   it('local development may keep using the example values', () => {
     expect(() =>
       loadEnv({

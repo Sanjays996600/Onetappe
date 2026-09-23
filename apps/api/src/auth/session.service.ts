@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { SignJWT, errors as joseErrors, jwtVerify } from 'jose';
 import type { Kysely } from 'kysely';
 import { Clock } from '../common/clock.js';
+import type { ActionContext } from '../database/action-context.js';
 import { UnauthorizedError } from '../common/errors.js';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
@@ -161,6 +162,13 @@ export class SessionService {
         .where('revoked_at', 'is', null)
         .execute(),
     );
+  }
+
+  /** The person's own "sign out everywhere". */
+  async revokeEverywhere(context: ActionContext, reason: string): Promise<void> {
+    const userId = context.actorUserId;
+    if (!userId) return;
+    await inTransaction(this.db, context, (tx) => this.revokeAllForUser(tx, userId, reason));
   }
 
   async revokeAllForUser(tx: Tx, userId: string, reason: string): Promise<void> {

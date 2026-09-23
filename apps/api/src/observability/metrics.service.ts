@@ -85,6 +85,14 @@ export class MetricsService {
              extract(epoch FROM now() - min(reported_at))::float
         FROM safety_incident WHERE severity = 'CRITICAL' AND status <> 'CLOSED'
       UNION ALL
+      SELECT 'safety_incident', 'UNACKNOWLEDGED_CRITICAL', count(*)::int,
+             extract(epoch FROM now() - min(reported_at))::float
+        FROM safety_incident
+       WHERE severity = 'CRITICAL' AND status <> 'CLOSED' AND acknowledged_at IS NULL
+      UNION ALL
+      SELECT 'safety_on_call', 'LEVEL_1_ACTIVE', count(*)::int, NULL
+        FROM safety_on_call WHERE removed_at IS NULL AND level = 1
+      UNION ALL
       SELECT 'job', 'FAILED_LAST_HOUR', count(*)::int, NULL
         FROM job_run WHERE status = 'FAILED' AND started_at > now() - interval '1 hour'
     `.execute(this.db);

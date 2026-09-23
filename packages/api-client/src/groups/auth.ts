@@ -53,5 +53,7 @@ export function authApi(http: HttpClient) {
         http.request(NoContent, 'POST', '/auth/staff/step-up', { body: input }),
     },
     logout: () => http.request(NoContent, 'POST', '/auth/logout'),
+    /** Lost or stolen phone: ends every session of this account, on every device. */
+    logoutAll: () => http.request(NoContent, 'POST', '/auth/logout-all'),
   };
 }

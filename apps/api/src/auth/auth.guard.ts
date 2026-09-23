@@ -7,7 +7,13 @@ import { Clock } from '../common/clock.js';
 import { ForbiddenError, UnauthorizedError } from '../common/errors.js';
 import { DATABASE } from '../database/database.module.js';
 import type { DB } from '../database/db.generated.js';
-import { CLIENT_APPS_KEY, IS_PUBLIC, PERMISSIONS_KEY, RECENT_MFA_KEY } from './decorators.js';
+import {
+  CLIENT_APPS_KEY,
+  INACTIVE_WORKER_KEY,
+  IS_PUBLIC,
+  PERMISSIONS_KEY,
+  RECENT_MFA_KEY,
+} from './decorators.js';
 import {
   roleLabel,
   sourceForApp,
@@ -22,6 +28,9 @@ export interface AuthenticatedRequest extends FastifyRequest {
   requestId: string;
   principal?: Principal;
 }
+
+/** Worker statuses that may take and do jobs. */
+const WORKING_STATUSES: readonly string[] = ['ACTIVE', 'RESTRICTED'];
 
 /** Staff activity refreshes the idle timer at most once a minute. */
 const TOUCH_INTERVAL_MS = 60_000;
@@ -56,6 +65,7 @@ export class AuthGuard implements CanActivate {
     const session = await this.db
       .selectFrom('auth_session as s')
       .innerJoin('app_user as u', 'u.id', 's.user_id')
+      .leftJoin('worker_profile as w', 'w.user_id', 's.user_id')
       .select([
         's.id',
         's.client_app',
@@ -64,6 +74,7 @@ export class AuthGuard implements CanActivate {
         's.last_used_at',
         's.mfa_verified_at',
         'u.status as user_status',
+        'w.status as worker_status',
       ])
       .where('s.id', '=', claims.sessionId)
       .where('s.user_id', '=', claims.userId)
@@ -103,6 +114,17 @@ export class AuthGuard implements CanActivate {
     );
     if (apps && !apps.includes(principal.app)) {
       throw new ForbiddenError('WRONG_APP', 'This action is not available in this app');
+    }
+
+    // Checked on every request, so a suspension applies to sessions that already exist.
+    if (
+      principal.app === 'WORKER_APP' &&
+      !WORKING_STATUSES.includes(session.worker_status ?? '') &&
+      !this.reflector.getAllAndOverride<boolean | undefined>(INACTIVE_WORKER_KEY, targets)
+    ) {
+      throw new ForbiddenError('WORKER_NOT_ACTIVE', 'Your account is not active for jobs', {
+        status: session.worker_status,
+      });
     }
 
     const required = this.reflector.getAllAndMerge<string[]>(PERMISSIONS_KEY, targets);

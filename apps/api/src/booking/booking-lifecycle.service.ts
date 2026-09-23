@@ -13,6 +13,7 @@ import {
   ForbiddenError,
   ValidationError,
   type AppError,
+  NotFoundError,
 } from '../common/errors.js';
 import type { ActionContext } from '../database/action-context.js';
 import { DATABASE } from '../database/database.module.js';
@@ -382,8 +383,9 @@ export class BookingLifecycleService {
   }
 
   private assertCustomerOwns(booking: LockedBooking, context: ActionContext): void {
+    // Someone else's booking is answered like a missing one: ids cannot be probed.
     if (context.source === 'CUSTOMER_APP' && context.actorUserId !== booking.customerUserId) {
-      throw new ForbiddenError('NOT_YOUR_BOOKING', 'This booking belongs to another customer');
+      throw new NotFoundError('Booking', booking.id);
     }
     if (context.source === 'WORKER_APP') {
       throw new ForbiddenError('ACTION_NOT_ALLOWED_FOR_CHANNEL', 'Workers cannot change bookings');
@@ -409,9 +411,8 @@ export class BookingLifecycleService {
       .where('worker_id', '=', context.actorUserId)
       .where('status', '=', 'ACCEPTED')
       .executeTakeFirst();
-    if (!assigned) {
-      throw new ForbiddenError('NOT_YOUR_JOB', 'You are not the assigned worker for this booking');
-    }
+    // Another worker's job is answered like a missing one.
+    if (!assigned) throw new NotFoundError('Job', booking.id);
   }
 
   private async releasePromotion(tx: Tx, bookingId: string): Promise<void> {

@@ -77,6 +77,22 @@ groups:
         annotations:
           summary: A critical safety incident (SOS) is open
 
+      # Independent of the SMS/email pages sent by the API: Alertmanager routes this to
+      # its own receiver (phone call / on-call app), so one failed channel cannot silence it.
+      - alert: SafetyIncidentUnacknowledged
+        expr: onetappe_backlog{queue="safety_incident", state="UNACKNOWLEDGED_CRITICAL"} > 0
+        for: 2m
+        labels: { severity: critical, page: safety }
+        annotations:
+          summary: A critical safety incident has not been acknowledged for 2 minutes
+
+      - alert: SafetyNobodyOnCall
+        expr: onetappe_backlog{queue="safety_on_call", state="LEVEL_1_ACTIVE"} < 1
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: Nobody is on the level-1 safety on-call roster; SOS pages would reach no one
+
       - alert: PaymentsUnresolved
         expr: onetappe_backlog{queue="payment", state="OPEN_OVER_15_MIN"} > 0
         for: 15m

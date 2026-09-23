@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import {
   Body,
   Button,
@@ -19,7 +19,7 @@ import { AppScreen } from '../src/ui';
 /** C-07 / C-08: services offered at the customer's address, in their language. */
 export default function Home() {
   const router = useRouter();
-  const { api, locale, setLocale, signOut, t } = useSession();
+  const { api, locale, setLocale, signOut, signOutEverywhere, t } = useSession();
   const home = useLoad(async () => {
     const addresses = await api.customer.addresses();
     const address =
@@ -90,6 +90,22 @@ export default function Home() {
         kind="secondary"
         label={t.language}
         onPress={() => setLocale(locale === 'en' ? 'hi' : 'en')}
+      />
+      <Button
+        kind="secondary"
+        label={t.signOutEverywhere}
+        onPress={() =>
+          void signOutEverywhere().then(
+            () => {
+              router.replace('/sign-in');
+            },
+            (error: unknown) => {
+              // The other phones are still signed in: say so, never pretend it worked.
+              const problem = describeError(error, locale);
+              Alert.alert(t.signOutEverywhere, problem.message);
+            },
+          )
+        }
       />
       <Button
         kind="secondary"

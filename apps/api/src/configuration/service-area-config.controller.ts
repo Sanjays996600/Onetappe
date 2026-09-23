@@ -3,7 +3,7 @@ import type { Kysely } from 'kysely';
 import { Inject } from '@nestjs/common';
 import { sql } from 'kysely';
 import { z } from 'zod';
-import { Actor, CurrentPrincipal, RequirePermissions } from '../auth/decorators.js';
+import { Actor, CurrentPrincipal, ForApp, RequirePermissions } from '../auth/decorators.js';
 import { citiesFor, type Principal } from '../auth/principal.js';
 import { NotFoundError } from '../common/errors.js';
 import { ZodPipe } from '../common/http/zod.pipe.js';
@@ -116,6 +116,7 @@ const PERMISSION = 'service_area.manage';
  * database; city-scoped roles can only change their own cities.
  */
 @Controller('admin/config')
+@ForApp('ADMIN_WEB')
 @RequirePermissions(PERMISSION)
 export class ServiceAreaConfigController {
   constructor(

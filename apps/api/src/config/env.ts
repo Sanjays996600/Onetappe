@@ -166,6 +166,16 @@ const EnvSchema = z
     }
 
     if (!['local', 'test'].includes(env.APP_ENV)) {
+      // Personal data travels to the database encrypted, and to the database we expect.
+      const sslmode = new URL(env.DATABASE_URL).searchParams.get('sslmode');
+      if (sslmode !== 'verify-full') {
+        fail(
+          `${env.APP_ENV} must connect to PostgreSQL with TLS and certificate checks (DATABASE_URL ...?sslmode=verify-full)`,
+        );
+      }
+    }
+
+    if (!['local', 'test'].includes(env.APP_ENV)) {
       // Identity documents never sit on an app server disk, and never go unscanned.
       if (env.STORAGE_PROVIDER !== 's3') fail(`${env.APP_ENV} must use STORAGE_PROVIDER=s3`);
       if (env.MALWARE_SCANNER !== 'clamav') fail(`${env.APP_ENV} must use MALWARE_SCANNER=clamav`);

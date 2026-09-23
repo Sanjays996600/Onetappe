@@ -15,6 +15,7 @@ import { RefundService } from '../payments/refund.service.js';
 import { SettlementService } from '../payments/settlement.service.js';
 import { IntegrationDispatcher } from '../integrations/integration-dispatcher.service.js';
 import { DocumentService } from '../storage/document.service.js';
+import { SafetyService } from '../support/safety.service.js';
 import type { Metrics } from '../observability/metrics.js';
 import { METRICS } from '../observability/observability.tokens.js';
 import { RequestContext } from '../observability/request-context.js';
@@ -32,6 +33,7 @@ export const JOB_NAMES = [
   'pull-zoho-desk-updates',
   'scan-documents',
   'purge-documents',
+  'page-safety-incidents',
 ] as const;
 
 export type JobName = (typeof JOB_NAMES)[number];
@@ -72,6 +74,7 @@ export class JobRunner implements OnApplicationShutdown {
     settlement: SettlementService,
     integrations: IntegrationDispatcher,
     documents: DocumentService,
+    safety: SafetyService,
     @Inject(METRICS) private readonly metrics: Metrics,
   ) {
     this.jobs = {
@@ -167,6 +170,11 @@ export class JobRunner implements OnApplicationShutdown {
         // Abandoned uploads and documents past their retention date.
         intervalMs: 60 * 60_000,
         run: (id) => documents.purge(id),
+      },
+      'page-safety-incidents': {
+        // Widens SOS paging every few minutes until someone acknowledges.
+        intervalMs: 15_000,
+        run: (id) => safety.pageDue(id),
       },
     };
   }

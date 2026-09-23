@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
   Actor,
   CurrentPrincipal,
+  ForApp,
   RequirePermissions,
   RequireRecentMfa,
 } from '../auth/decorators.js';
@@ -58,6 +59,7 @@ const PERMISSION = 'promotion.manage';
  * change (the database refuses it); a promotion can be narrowed, extended or switched off.
  */
 @Controller('admin/config/promotions')
+@ForApp('ADMIN_WEB')
 @RequirePermissions(PERMISSION)
 export class PromotionConfigController {
   constructor(@Inject(DATABASE) private readonly db: Kysely<DB>) {}

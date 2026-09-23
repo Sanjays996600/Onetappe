@@ -11,7 +11,7 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import { z } from 'zod';
-import { Actor, ForApp, RequirePermissions } from '../auth/decorators.js';
+import { Actor, ForApp, RequirePermissions, RequireRecentMfa } from '../auth/decorators.js';
 import { ZodPipe } from '../common/http/zod.pipe.js';
 import type { ActionContext } from '../database/action-context.js';
 import { AdminPeopleService } from './admin-people.service.js';
@@ -126,6 +126,32 @@ export class AdminPeopleController {
     @Body(new ZodPipe(ReasonBody)) body: z.infer<typeof ReasonBody>,
   ) {
     return this.people.revealCustomer(actor, id, body.reason);
+  }
+
+  /** Lost or stolen phone: signs the customer out of every device. Audited. */
+  @Post('customers/:id/sessions/revoke')
+  @HttpCode(200)
+  @RequirePermissions('account.sessions.revoke')
+  @RequireRecentMfa()
+  revokeCustomerSessions(
+    @Actor() actor: ActionContext,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodPipe(ReasonBody)) body: z.infer<typeof ReasonBody>,
+  ) {
+    return this.people.revokeSessions(actor, id, 'CUSTOMER_APP', body.reason);
+  }
+
+  /** Lost or stolen phone: signs the worker out of every device. Audited. */
+  @Post('workers/:id/sessions/revoke')
+  @HttpCode(200)
+  @RequirePermissions('account.sessions.revoke')
+  @RequireRecentMfa()
+  revokeWorkerSessions(
+    @Actor() actor: ActionContext,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodPipe(ReasonBody)) body: z.infer<typeof ReasonBody>,
+  ) {
+    return this.people.revokeSessions(actor, id, 'WORKER_APP', body.reason);
   }
 
   // ---- Workers ----
