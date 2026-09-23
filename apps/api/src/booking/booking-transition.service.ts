@@ -14,6 +14,7 @@ import {
   ValidationError,
 } from '../common/errors.js';
 import { IntegrationOutbox } from '../integrations/integration-outbox.service.js';
+import { RequestContext } from '../observability/request-context.js';
 
 export interface LockedBooking {
   readonly id: string;
@@ -39,6 +40,8 @@ export class BookingTransitionService {
 
   /** Locks the booking row for the rest of the transaction. */
   async lock(tx: Tx, bookingId: string): Promise<LockedBooking> {
+    // Logs written from here on in this request carry the booking id.
+    RequestContext.annotate({ bookingId });
     const row = await tx
       .selectFrom('booking')
       .select([

@@ -8,10 +8,21 @@ import { AdminBookingService } from './admin-booking.service.js';
 import { AdminOperationsController } from './admin-operations.controller.js';
 import { AdminPeopleController } from './admin-people.controller.js';
 import { AdminPeopleService } from './admin-people.service.js';
+import { BookingTraceService } from './booking-trace.service.js';
+import { SystemStatusService } from './system-status.service.js';
+import { IntegrationsModule } from '../integrations/integrations.module.js';
+import { JobsModule } from '../jobs/jobs.module.js';
 
 @Module({
-  imports: [BookingModule, PaymentsModule, SupportModule, WorkerModule],
+  imports: [
+    BookingModule,
+    PaymentsModule,
+    SupportModule,
+    WorkerModule,
+    JobsModule,
+    IntegrationsModule,
+  ],
   controllers: [AdminBookingController, AdminPeopleController, AdminOperationsController],
-  providers: [AdminBookingService, AdminPeopleService],
+  providers: [AdminBookingService, AdminPeopleService, BookingTraceService, SystemStatusService],
 })
 export class AdminModule {}

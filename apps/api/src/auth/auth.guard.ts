@@ -16,6 +16,7 @@ import {
   type Principal,
 } from './principal.js';
 import { SessionService } from './session.service.js';
+import { RequestContext } from '../observability/request-context.js';
 
 export interface AuthenticatedRequest extends FastifyRequest {
   requestId: string;
@@ -94,6 +95,7 @@ export class AuthGuard implements CanActivate {
       mfaVerifiedAt: session.mfa_verified_at,
     };
     request.principal = principal;
+    RequestContext.annotate({ actorUserId: principal.userId });
 
     const apps = this.reflector.getAllAndOverride<ClientApp[] | undefined>(
       CLIENT_APPS_KEY,

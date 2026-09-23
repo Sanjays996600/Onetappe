@@ -1,0 +1,103 @@
+# Prometheus alerting rules for One Tappe. Load into Prometheus (or Grafana Mimir/Cloud)
+# and route "critical" to the on-call pager and "warning" to the operations channel.
+# Metrics come from GET /api/v1/metrics (API) and :9464/metrics (worker), both requiring
+# the METRICS_TOKEN bearer token.
+groups:
+  - name: onetappe-availability
+    rules:
+      - alert: ApiDown
+        expr: up{job="onetappe-api"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: API instance {{ $labels.instance }} is not answering scrapes
+
+      - alert: WorkerDown
+        expr: absent(up{job="onetappe-worker"} == 1)
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: No background worker is running (expiry, offers, payments, notifications stop)
+
+      - alert: ApiErrorRateHigh
+        expr: |
+          sum(rate(onetappe_http_request_duration_seconds_count{status=~"5.."}[5m]))
+            / sum(rate(onetappe_http_request_duration_seconds_count[5m])) > 0.02
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: More than 2% of API requests are failing with 5xx
+
+      - alert: ApiLatencyHigh
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(onetappe_http_request_duration_seconds_bucket[5m]))) > 1.5
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: 95th percentile API latency above 1.5s
+
+  - name: onetappe-background-work
+    rules:
+      - alert: JobFailing
+        expr: increase(onetappe_job_runs_total{outcome="failed"}[15m]) > 3
+        labels: { severity: warning }
+        annotations:
+          summary: Background job {{ $labels.job }} keeps failing
+
+      - alert: NotificationBacklog
+        expr: onetappe_backlog_oldest_waiting_seconds{queue=~"notification:(QUEUED|FAILED)"} > 900
+        labels: { severity: warning }
+        annotations:
+          summary: Notifications have been waiting more than 15 minutes
+
+      - alert: IntegrationPaused
+        expr: onetappe_integration_paused == 1
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: Delivery to {{ $labels.target }} has been paused for 15 minutes (rate limit, credentials or configuration)
+
+      - alert: IntegrationDeadEvents
+        expr: onetappe_backlog{queue=~"integration:.*", state="DEAD"} > 0
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.queue }} has failed events waiting for a decision'
+
+      - alert: IntegrationBacklogOld
+        expr: onetappe_backlog_oldest_waiting_seconds{queue=~"integration:.*:PENDING"} > 3600
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.queue }} events have been waiting more than an hour'
+
+  - name: onetappe-money-and-safety
+    rules:
+      - alert: SafetyIncidentOpen
+        expr: onetappe_backlog{queue="safety_incident", state="OPEN_CRITICAL"} > 0
+        labels: { severity: critical }
+        annotations:
+          summary: A critical safety incident (SOS) is open
+
+      - alert: PaymentsUnresolved
+        expr: onetappe_backlog{queue="payment", state="OPEN_OVER_15_MIN"} > 0
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: Payments unresolved for over 15 minutes (webhooks or reconciliation not arriving)
+
+      - alert: PaymentEventProblems
+        expr: increase(onetappe_backlog{queue="payment_event", state="PROCESSING_ERROR"}[1h]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: A gateway event could not be applied (e.g. amount mismatch); finance should review
+
+      - alert: RefundsFailed
+        expr: onetappe_backlog{queue="refund", state="FAILED"} > 0
+        labels: { severity: warning }
+        annotations:
+          summary: Refunds failed at the gateway
+
+      - alert: ConfirmedBookingsUnassigned
+        expr: onetappe_backlog_oldest_waiting_seconds{queue="booking:UNASSIGNED_CONFIRMED"} > 1800
+        labels: { severity: warning }
+        annotations:
+          summary: A paid booking has had no accepted worker for 30 minutes

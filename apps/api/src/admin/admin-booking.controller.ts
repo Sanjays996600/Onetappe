@@ -14,6 +14,7 @@ import { ZodPipe } from '../common/http/zod.pipe.js';
 import type { ActionContext } from '../database/action-context.js';
 import { BookingCancellationService } from '../payments/booking-cancellation.service.js';
 import { AdminBookingService } from './admin-booking.service.js';
+import { BookingTraceService } from './booking-trace.service.js';
 
 const reason = z.string().trim().min(5, 'Give a meaningful reason').max(500);
 const ReasonBody = z.object({ reason }).strict();
@@ -80,6 +81,7 @@ export class AdminBookingController {
     private readonly dispatch: DispatchService,
     private readonly lifecycle: BookingLifecycleService,
     private readonly cancellation: BookingCancellationService,
+    private readonly traces: BookingTraceService,
   ) {}
 
   @Get()
@@ -101,6 +103,13 @@ export class AdminBookingController {
   @RequirePermissions('booking.read')
   detail(@CurrentPrincipal() principal: Principal, @Param('id', ParseUUIDPipe) id: string) {
     return this.bookings.detail(principal, id);
+  }
+
+  /** Everything that happened to the booking, across the system, with request ids. */
+  @Get(':id/trace')
+  @RequirePermissions('booking.read')
+  trace(@CurrentPrincipal() principal: Principal, @Param('id', ParseUUIDPipe) id: string) {
+    return this.traces.trace(principal, id);
   }
 
   @Post()

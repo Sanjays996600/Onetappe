@@ -79,6 +79,12 @@ const EnvSchema = z
     /** Public base URL of this API, used to build upload links for the local storage provider. */
     PUBLIC_API_URL: z.url().default('http://localhost:3000'),
 
+    LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
+    /** Bearer token Prometheus must present to read /metrics (required outside local/test). */
+    METRICS_TOKEN: z.string().optional(),
+    /** Port of the background worker's metrics/health endpoint. */
+    WORKER_METRICS_PORT: z.coerce.number().int().min(1).max(65_535).default(9464),
+
     /** Comma-separated origins allowed to call the API from browsers (admin panel). */
     CORS_ORIGINS: z.string().default(''),
   })
@@ -148,6 +154,12 @@ const EnvSchema = z
     if (zohoEnabled && !['local', 'test'].includes(env.APP_ENV)) {
       for (const url of [env.ZOHO_ACCOUNTS_URL, env.ZOHO_CRM_API_URL, env.ZOHO_DESK_API_URL]) {
         if (!url.startsWith('https://')) fail(`Zoho endpoints must use HTTPS (${url})`);
+      }
+    }
+
+    if (!['local', 'test'].includes(env.APP_ENV)) {
+      if (!env.METRICS_TOKEN || env.METRICS_TOKEN.length < 32) {
+        fail('METRICS_TOKEN (32+ characters) is required outside local/test');
       }
     }
 

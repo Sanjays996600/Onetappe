@@ -15,6 +15,8 @@ Object.assign(process.env, {
   OTP_PROVIDER: 'test',
   PAYMENT_PROVIDER: 'sandbox',
   SANDBOX_WEBHOOK_SECRET: 'test-sandbox-webhook-secret-0123456789ab',
+  // Keep test output readable; the observability test raises the level to capture lines.
+  LOG_LEVEL: 'error',
 });
 
 process.env['STORAGE_DIR'] ??= `${process.env['TMPDIR'] ?? '/tmp'}/onetappe-test-storage`;

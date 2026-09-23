@@ -10,6 +10,7 @@ import { IntegrationOutboxModule } from './integrations/integration-outbox.modul
 import { IntegrationsModule } from './integrations/integrations.module.js';
 import { JobsModule } from './jobs/jobs.module.js';
 import { NotificationModule } from './notifications/notification.module.js';
+import { ObservabilityModule } from './observability/observability.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
 import { StorageModule } from './storage/storage.module.js';
 import { WorkerModule } from './worker/worker.module.js';
@@ -19,6 +20,7 @@ import { WorkerModule } from './worker/worker.module.js';
     // Infrastructure
     ConfigModule,
     DatabaseModule,
+    ObservabilityModule,
     AuthModule,
     NotificationModule,
     StorageModule,

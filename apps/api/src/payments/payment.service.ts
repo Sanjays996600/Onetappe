@@ -358,10 +358,20 @@ export class PaymentService {
     return inTransaction(this.db, context, async (tx) => {
       // The unique (provider, event id) makes processing exactly-once even when the
       // gateway delivers the same event twice at the same moment.
+      // Linked to our payment (when the order is known) so traces can follow it.
+      const payment = event.providerOrderId
+        ? await tx
+            .selectFrom('payment')
+            .select('id')
+            .where('provider', '=', this.provider.name)
+            .where('provider_order_id', '=', event.providerOrderId)
+            .executeTakeFirst()
+        : undefined;
       const stored = await tx
         .insertInto('payment_event')
         .values({
           provider: this.provider.name,
+          payment_id: payment?.id ?? null,
           provider_event_id: event.eventId,
           event_type: event.rawType,
           signature_verified: signatureVerified,

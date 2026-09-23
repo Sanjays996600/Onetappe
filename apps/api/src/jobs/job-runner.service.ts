@@ -14,6 +14,9 @@ import { PaymentService } from '../payments/payment.service.js';
 import { RefundService } from '../payments/refund.service.js';
 import { SettlementService } from '../payments/settlement.service.js';
 import { IntegrationDispatcher } from '../integrations/integration-dispatcher.service.js';
+import type { Metrics } from '../observability/metrics.js';
+import { METRICS } from '../observability/observability.tokens.js';
+import { RequestContext } from '../observability/request-context.js';
 
 export const JOB_NAMES = [
   'expire-unpaid-bookings',
@@ -65,6 +68,7 @@ export class JobRunner implements OnApplicationShutdown {
     refunds: RefundService,
     settlement: SettlementService,
     integrations: IntegrationDispatcher,
+    @Inject(METRICS) private readonly metrics: Metrics,
   ) {
     this.jobs = {
       'expire-unpaid-bookings': {
@@ -154,6 +158,13 @@ export class JobRunner implements OnApplicationShutdown {
     };
   }
 
+  /** How often each job is meant to run (for staleness checks). */
+  intervals(): Record<JobName, number> {
+    const out = {} as Record<JobName, number>;
+    for (const name of JOB_NAMES) out[name] = this.jobs[name].intervalMs;
+    return out;
+  }
+
   /** Starts every job on its interval (worker process only). */
   start(): void {
     for (const name of JOB_NAMES) this.schedule(name, 1_000);
@@ -200,9 +211,14 @@ export class JobRunner implements OnApplicationShutdown {
       .values({ job_name: name })
       .returning('id')
       .executeTakeFirstOrThrow();
-    const requestId = `job:${name}:${run.id}`;
+    const requestId = `job:${name}:${String(run.id)}`;
+    const stopTimer = this.metrics.jobDuration.startTimer({ job: name });
     try {
-      const processed = await job.run(requestId);
+      const processed = await RequestContext.run({ requestId, job: name }, () =>
+        job.run(requestId),
+      );
+      stopTimer();
+      this.metrics.jobRuns.inc({ job: name, outcome: 'succeeded' });
       await this.db
         .updateTable('job_run')
         .set({ status: 'SUCCEEDED', processed, finished_at: sql<Date>`clock_timestamp()` })
@@ -210,6 +226,8 @@ export class JobRunner implements OnApplicationShutdown {
         .execute();
       return { job: name, ran: true, processed };
     } catch (error) {
+      stopTimer();
+      this.metrics.jobRuns.inc({ job: name, outcome: 'failed' });
       this.logger.error(`Job ${name} failed`, error instanceof Error ? error.stack : String(error));
       await this.db
         .updateTable('job_run')

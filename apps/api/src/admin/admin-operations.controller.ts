@@ -23,6 +23,7 @@ import { inTransaction } from '../database/transaction.js';
 import { RefundService } from '../payments/refund.service.js';
 import { SAFETY_CATEGORIES, SafetyService } from '../support/safety.service.js';
 import { SUPPORT_STATUSES, SupportService } from '../support/support.service.js';
+import { SystemStatusService } from './system-status.service.js';
 
 const reason = z.string().trim().min(5, 'Give a meaningful reason').max(500);
 const ReasonBody = z.object({ reason }).strict();
@@ -105,6 +106,7 @@ export class AdminOperationsController {
     private readonly refunds: RefundService,
     private readonly support: SupportService,
     private readonly safety: SafetyService,
+    private readonly system: SystemStatusService,
   ) {}
 
   // ---- Refunds ----
@@ -242,6 +244,12 @@ export class AdminOperationsController {
   }
 
   // ---- Audit & settings ----
+
+  @Get('system/status')
+  @RequirePermissions('system.read')
+  systemStatus() {
+    return this.system.status();
+  }
 
   @Get('audit')
   @RequirePermissions('audit.read')

@@ -4,6 +4,10 @@ import type { INestApplication } from '@nestjs/common';
 import { AppModule } from './app.module.js';
 import { AppErrorFilter } from './common/app-error.filter.js';
 import { registerRequestId } from './common/http/request-id.js';
+import { registerHttpObservability } from './observability/http-observability.js';
+import type { JsonLogger } from './observability/json-logger.js';
+import type { Metrics } from './observability/metrics.js';
+import { APP_LOGGER, METRICS } from './observability/observability.tokens.js';
 import { MAX_DOCUMENT_BYTES } from './storage/document-storage.js';
 import type { Env } from './config/env.js';
 
@@ -27,6 +31,7 @@ export function configureApp(app: INestApplication, env: Pick<Env, 'CORS_ORIGINS
   app.useGlobalFilters(new AppErrorFilter());
   const fastify = (app as NestFastifyApplication).getHttpAdapter().getInstance();
   registerRequestId(fastify);
+  registerHttpObservability(fastify, app.get<JsonLogger>(APP_LOGGER), app.get<Metrics>(METRICS));
   // Document uploads (local storage provider) arrive as raw bytes with their own limit.
   fastify.addContentTypeParser(
     'application/octet-stream',
@@ -46,7 +51,9 @@ export async function createApp(env: Env): Promise<NestFastifyApplication> {
   // rawBody: payment webhooks are verified against the exact bytes received.
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, createAdapter(env), {
     rawBody: true,
+    bufferLogs: true,
   });
+  app.useLogger(app.get<JsonLogger>(APP_LOGGER));
   configureApp(app, env);
   return app;
 }
