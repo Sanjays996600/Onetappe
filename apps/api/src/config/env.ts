@@ -67,11 +67,26 @@ const EnvSchema = z
     ZOHO_DESK_WEBHOOK_SECRET: z.string().optional(),
     ZOHO_HTTP_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(60_000).default(10_000),
 
-    /** Notification channel providers; `log` records the message without sending it. */
-    PUSH_PROVIDER: z.enum(['log']).default('log'),
-    SMS_PROVIDER: z.enum(['log']).default('log'),
-    WHATSAPP_PROVIDER: z.enum(['log']).default('log'),
-    EMAIL_PROVIDER: z.enum(['log']).default('log'),
+    /**
+     * Notification channel providers. `log` records without delivering (local/test only);
+     * `none` means the channel is not offered (messages are recorded as SKIPPED).
+     */
+    PUSH_PROVIDER: z.enum(['log', 'none', 'fcm']).default('log'),
+    SMS_PROVIDER: z.enum(['log', 'none', 'msg91']).default('log'),
+    WHATSAPP_PROVIDER: z.enum(['log', 'none']).default('log'),
+    EMAIL_PROVIDER: z.enum(['log', 'none', 'zeptomail']).default('log'),
+    NOTIFICATION_HTTP_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(30_000).default(10_000),
+    FCM_PROJECT_ID: z.string().optional(),
+    FCM_CLIENT_EMAIL: z.string().optional(),
+    /** Service-account private key (PEM; `\n` escapes are accepted). */
+    FCM_PRIVATE_KEY: z.string().optional(),
+    FCM_API_URL: z.url().default('https://fcm.googleapis.com'),
+    GOOGLE_OAUTH_TOKEN_URL: z.url().default('https://oauth2.googleapis.com/token'),
+    MSG91_API_URL: z.url().default('https://control.msg91.com'),
+    ZEPTOMAIL_API_URL: z.url().default('https://api.zeptomail.in/v1.1/email'),
+    ZEPTOMAIL_TOKEN: z.string().optional(),
+    EMAIL_FROM_ADDRESS: z.email().optional(),
+    EMAIL_FROM_NAME: z.string().default('One Tappe'),
 
     /** Worker documents. `local` = encrypted files on this server (not for production). */
     STORAGE_PROVIDER: z.enum(['local']).default('local'),
@@ -138,6 +153,34 @@ const EnvSchema = z
       fail('RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET and RAZORPAY_WEBHOOK_SECRET are required');
     }
 
+    const channelProviders = {
+      PUSH_PROVIDER: env.PUSH_PROVIDER,
+      SMS_PROVIDER: env.SMS_PROVIDER,
+      WHATSAPP_PROVIDER: env.WHATSAPP_PROVIDER,
+      EMAIL_PROVIDER: env.EMAIL_PROVIDER,
+    };
+    if (!['local', 'test'].includes(env.APP_ENV)) {
+      // `log` would mark messages as sent without delivering them.
+      for (const [name, provider] of Object.entries(channelProviders)) {
+        if (provider === 'log')
+          fail(`${name}=log is only allowed locally (use a provider or none)`);
+      }
+    }
+    if (
+      env.PUSH_PROVIDER === 'fcm' &&
+      (!env.FCM_PROJECT_ID || !env.FCM_CLIENT_EMAIL || !env.FCM_PRIVATE_KEY)
+    ) {
+      fail(
+        'FCM_PROJECT_ID, FCM_CLIENT_EMAIL and FCM_PRIVATE_KEY are required for PUSH_PROVIDER=fcm',
+      );
+    }
+    if (env.SMS_PROVIDER === 'msg91' && !env.MSG91_AUTH_KEY) {
+      fail('MSG91_AUTH_KEY is required for SMS_PROVIDER=msg91');
+    }
+    if (env.EMAIL_PROVIDER === 'zeptomail' && (!env.ZEPTOMAIL_TOKEN || !env.EMAIL_FROM_ADDRESS)) {
+      fail('ZEPTOMAIL_TOKEN and EMAIL_FROM_ADDRESS are required for EMAIL_PROVIDER=zeptomail');
+    }
+
     const zohoEnabled = env.ZOHO_CRM_ENABLED || env.ZOHO_DESK_ENABLED;
     if (
       zohoEnabled &&
@@ -151,9 +194,19 @@ const EnvSchema = z
         fail('ZOHO_DESK_WEBHOOK_SECRET (32+ characters) is required for Zoho Desk');
       }
     }
-    if (zohoEnabled && !['local', 'test'].includes(env.APP_ENV)) {
-      for (const url of [env.ZOHO_ACCOUNTS_URL, env.ZOHO_CRM_API_URL, env.ZOHO_DESK_API_URL]) {
-        if (!url.startsWith('https://')) fail(`Zoho endpoints must use HTTPS (${url})`);
+    if (!['local', 'test'].includes(env.APP_ENV)) {
+      // Every external endpoint uses TLS outside local development and tests.
+      const endpoints = {
+        ZOHO_ACCOUNTS_URL: env.ZOHO_ACCOUNTS_URL,
+        ZOHO_CRM_API_URL: env.ZOHO_CRM_API_URL,
+        ZOHO_DESK_API_URL: env.ZOHO_DESK_API_URL,
+        FCM_API_URL: env.FCM_API_URL,
+        GOOGLE_OAUTH_TOKEN_URL: env.GOOGLE_OAUTH_TOKEN_URL,
+        MSG91_API_URL: env.MSG91_API_URL,
+        ZEPTOMAIL_API_URL: env.ZEPTOMAIL_API_URL,
+      };
+      for (const [name, url] of Object.entries(endpoints)) {
+        if (!url.startsWith('https://')) fail(`${name} must use HTTPS`);
       }
     }
 

@@ -464,10 +464,19 @@ export interface Notification {
   provider_message_id: string | null;
   read_at: Timestamp | null;
   sent_at: Timestamp | null;
+  skipped_reason: string | null;
   status: Generated<string>;
   template_id: string;
   user_id: string;
   variables: Generated<Json>;
+}
+
+export interface NotificationRoute {
+  channel: string;
+  event_code: string;
+  is_enabled: Generated<boolean>;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
 }
 
 export interface NotificationTemplate {
@@ -1151,6 +1160,7 @@ export interface DB {
   locale: Locale;
   locality: Locality;
   notification: Notification;
+  notification_route: NotificationRoute;
   notification_template: NotificationTemplate;
   otp_challenge: OtpChallenge;
   payment: Payment;

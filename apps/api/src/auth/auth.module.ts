@@ -47,6 +47,7 @@ import { StaffAuthService } from './staff-auth.service.js';
             return new Msg91OtpSender({
               authKey: env.MSG91_AUTH_KEY ?? '',
               templateId: env.MSG91_TEMPLATE_ID ?? '',
+              apiUrl: env.MSG91_API_URL,
             });
         }
       },

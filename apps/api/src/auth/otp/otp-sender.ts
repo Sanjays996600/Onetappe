@@ -80,6 +80,8 @@ export class TestOtpSender implements OtpSender {
 
 export interface Msg91Config {
   readonly authKey: string;
+  /** Base URL, e.g. https://control.msg91.com. */
+  readonly apiUrl?: string;
   /** DLT-registered OTP template id from the MSG91 panel. */
   readonly templateId: string;
   readonly timeoutMs?: number;
@@ -100,7 +102,7 @@ export class Msg91OtpSender implements OtpSender {
   ) {}
 
   async send(phoneE164: string, code: string): Promise<OtpDelivery> {
-    const url = new URL('https://control.msg91.com/api/v5/otp');
+    const url = new URL('/api/v5/otp', this.config.apiUrl ?? 'https://control.msg91.com');
     url.searchParams.set('template_id', this.config.templateId);
     url.searchParams.set('mobile', phoneE164.replace(/^\+/, ''));
     url.searchParams.set('otp', code);

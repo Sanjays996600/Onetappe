@@ -30,13 +30,18 @@ export class NotificationService {
       .executeTakeFirst();
     if (!user) return 0;
 
-    // Active templates for the event: the user's language where available, else English.
+    // Channels switched on for the event (routing), each with an active template in the
+    // user's language where available, else English.
     const templates = await tx
-      .selectFrom('notification_template')
-      .select(['id', 'channel', 'locale'])
-      .where('code', '=', request.event)
-      .where('is_active', '=', true)
-      .where('locale', 'in', [user.preferred_locale, 'en'])
+      .selectFrom('notification_template as t')
+      .innerJoin('notification_route as r', (j) =>
+        j.onRef('r.event_code', '=', 't.code').onRef('r.channel', '=', 't.channel'),
+      )
+      .select(['t.id', 't.channel', 't.locale'])
+      .where('t.code', '=', request.event)
+      .where('t.is_active', '=', true)
+      .where('r.is_enabled', '=', true)
+      .where('t.locale', 'in', [user.preferred_locale, 'en'])
       .execute();
 
     const byChannel = new Map<string, { id: string; locale: string }>();

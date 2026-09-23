@@ -3,7 +3,7 @@ import { DEFAULT_TIME_ZONE } from '@onetappe/domain';
 import { sql, type Kysely, type UpdateObject } from 'kysely';
 import { DATABASE } from '../database/database.module.js';
 import type { DB } from '../database/db.generated.js';
-import { CHANNEL_SENDERS, type ChannelSender } from './channels.js';
+import { CHANNEL_SENDERS, ChannelError, type ChannelSender } from './channels.js';
 import type { NotificationChannel } from './events.js';
 import { formatAmount, formatDateTime, renderTemplate } from './render.js';
 
@@ -82,10 +82,12 @@ export class NotificationDispatcher {
       .select([
         'n.id',
         'n.user_id',
+        'n.booking_id',
         'n.channel',
         'n.locale',
         'n.variables',
         'n.attempts',
+        't.code',
         't.title',
         't.body',
         't.provider_template_id',
@@ -107,68 +109,135 @@ export class NotificationDispatcher {
       return;
     }
 
-    const recipients = await this.recipients(channel, row);
-    const sender = this.senders.get(channel);
-    if (recipients.length === 0 || !sender) {
-      await this.mark(id, {
-        status: 'SKIPPED',
-        last_error: recipients.length === 0 ? 'NO_RECIPIENT' : 'NO_PROVIDER',
-      });
-      return;
-    }
+    // Routing may have been switched off after the message was queued.
+    const route = await this.db
+      .selectFrom('notification_route')
+      .select('is_enabled')
+      .where('event_code', '=', row.code)
+      .where('channel', '=', channel)
+      .executeTakeFirst();
+    if (!route?.is_enabled) return this.skip(id, 'ROUTE_DISABLED');
 
-    try {
-      let providerId = '';
-      for (const recipient of recipients) {
-        providerId = await sender.send({
-          notificationId: id,
-          channel,
-          recipient,
-          title,
-          body,
-          providerTemplateId: row.provider_template_id,
-        });
-      }
+    const sender = this.senders.get(channel);
+    if (!sender) return this.skip(id, 'NO_PROVIDER');
+    if (channel === 'WHATSAPP' && !(await this.hasConsent(row.user_id, 'WHATSAPP'))) {
+      return this.skip(id, 'NO_CONSENT');
+    }
+    const recipients = await this.recipients(channel, row);
+    if (recipients.length === 0) return this.skip(id, 'NO_RECIPIENT');
+
+    const outcomes = await Promise.all(
+      recipients.map(async (recipient) => {
+        try {
+          const providerId = await sender.send({
+            notificationId: id,
+            channel,
+            recipient: recipient.address,
+            title,
+            body,
+            providerTemplateId: row.provider_template_id,
+            variables,
+            data: { event: row.code, ...(row.booking_id ? { bookingId: row.booking_id } : {}) },
+          });
+          return { ok: true as const, providerId };
+        } catch (error) {
+          const failure =
+            error instanceof ChannelError
+              ? error
+              : new ChannelError('RETRYABLE', error instanceof Error ? error.message : 'Unknown');
+          if (failure.kind === 'INVALID_RECIPIENT' && recipient.deviceId) {
+            // The app was uninstalled or the token rotated: stop sending to it.
+            await this.db
+              .updateTable('user_device')
+              .set({ disabled_at: sql<Date>`now()` })
+              .where('id', '=', recipient.deviceId)
+              .execute();
+          }
+          return { ok: false as const, failure };
+        }
+      }),
+    );
+
+    const attempts = row.attempts + 1;
+    const delivered = outcomes.find((o) => o.ok);
+    if (delivered) {
+      // At least one device/address received it. Others that failed are not retried,
+      // so nobody gets the same message twice.
       await this.mark(id, {
         status: 'SENT',
         sent_at: sql<Date>`now()`,
-        provider_message_id: providerId,
-        attempts: row.attempts + 1,
+        provider_message_id: delivered.providerId,
+        attempts,
+        last_error: null,
       });
-    } catch (error) {
-      const attempts = row.attempts + 1;
-      const wait =
-        DISPATCH_POLICY.backoffMinutes[
-          Math.min(attempts, DISPATCH_POLICY.backoffMinutes.length) - 1
-        ] ?? 60;
+      return;
+    }
+    const failures = outcomes.flatMap((o) => (o.ok ? [] : [o.failure]));
+    const retryable = failures.some((f) => f.kind === 'RETRYABLE');
+    const message = failures
+      .map((f) => f.message)
+      .join('; ')
+      .slice(0, 500);
+    if (!retryable) {
+      // Nothing will change by retrying (invalid recipient, refused template): stop here.
       await this.mark(id, {
         status: 'FAILED',
-        attempts,
-        last_error: error instanceof Error ? error.message.slice(0, 500) : 'Unknown error',
-        next_attempt_at: sql<Date>`now() + make_interval(mins => ${wait})`,
+        attempts: DISPATCH_POLICY.maxAttempts,
+        last_error: message,
       });
+      return;
     }
+    const wait =
+      DISPATCH_POLICY.backoffMinutes[
+        Math.min(attempts, DISPATCH_POLICY.backoffMinutes.length) - 1
+      ] ?? 60;
+    await this.mark(id, {
+      status: 'FAILED',
+      attempts,
+      last_error: message,
+      next_attempt_at: sql<Date>`now() + make_interval(mins => ${wait})`,
+    });
+  }
+
+  private async skip(
+    id: string,
+    reason: 'NO_RECIPIENT' | 'NO_PROVIDER' | 'NO_CONSENT' | 'ROUTE_DISABLED',
+  ): Promise<void> {
+    await this.mark(id, { status: 'SKIPPED', skipped_reason: reason, last_error: reason });
+  }
+
+  private async hasConsent(userId: string, purpose: 'WHATSAPP'): Promise<boolean> {
+    const consent = await this.db
+      .selectFrom('consent_record')
+      .select('id')
+      .where('user_id', '=', userId)
+      .where('purpose', '=', purpose)
+      .where('withdrawn_at', 'is', null)
+      .executeTakeFirst();
+    return consent !== undefined;
   }
 
   private async recipients(
     channel: NotificationChannel,
     row: { user_id: string; phone_e164: string | null; email: string | null },
-  ): Promise<string[]> {
+  ): Promise<Array<{ address: string; deviceId?: string }>> {
     switch (channel) {
       case 'SMS':
       case 'WHATSAPP':
-        return row.phone_e164 ? [row.phone_e164] : [];
+        return row.phone_e164 ? [{ address: row.phone_e164 }] : [];
       case 'EMAIL':
-        return row.email ? [row.email] : [];
+        return row.email ? [{ address: row.email }] : [];
       case 'PUSH': {
         const devices = await this.db
           .selectFrom('user_device')
-          .select('push_token')
+          .select(['id', 'push_token'])
           .where('user_id', '=', row.user_id)
           .where('disabled_at', 'is', null)
           .where('push_token', 'is not', null)
           .execute();
-        return devices.flatMap((d) => (d.push_token ? [d.push_token] : []));
+        return devices.flatMap((d) =>
+          d.push_token ? [{ address: d.push_token, deviceId: d.id }] : [],
+        );
       }
       case 'IN_APP':
         return [];
