@@ -9,6 +9,9 @@ export default defineConfig({
       '@onetappe/domain': fileURLToPath(
         new URL('../../packages/domain/src/index.ts', import.meta.url),
       ),
+      '@onetappe/api-client': fileURLToPath(
+        new URL('../../packages/api-client/src/index.ts', import.meta.url),
+      ),
     },
   },
   // SWC emits the decorator metadata NestJS dependency injection relies on.

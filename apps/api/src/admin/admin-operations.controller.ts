@@ -13,7 +13,14 @@ import {
 } from '@nestjs/common';
 import type { Kysely } from 'kysely';
 import { z } from 'zod';
-import { Actor, ForApp, RequirePermissions, RequireRecentMfa } from '../auth/decorators.js';
+import {
+  Actor,
+  CurrentPrincipal,
+  ForApp,
+  RequirePermissions,
+  RequireRecentMfa,
+} from '../auth/decorators.js';
+import type { Principal } from '../auth/principal.js';
 import { NotFoundError, ValidationError } from '../common/errors.js';
 import { ZodPipe } from '../common/http/zod.pipe.js';
 import type { ActionContext } from '../database/action-context.js';
@@ -109,6 +116,35 @@ export class AdminOperationsController {
     private readonly safety: SafetyService,
     private readonly system: SystemStatusService,
   ) {}
+
+  // ---- The signed-in staff member ----
+
+  /**
+   * Who is signed in and what they may do, so the admin panel shows only permitted
+   * screens and actions. The API still checks every request; this is for display.
+   */
+  @Get('me')
+  async me(@CurrentPrincipal() principal: Principal) {
+    const user = await this.db
+      .selectFrom('app_user')
+      .select(['id', 'email', 'full_name', 'preferred_locale'])
+      .where('id', '=', principal.userId)
+      .executeTakeFirstOrThrow();
+    return {
+      id: user.id,
+      email: user.email,
+      fullName: user.full_name,
+      locale: user.preferred_locale,
+      roles: principal.roles,
+      permissions: Object.fromEntries(
+        [...principal.permissions].map(([code, grant]) => [
+          code,
+          grant === 'ALL' ? 'ALL' : [...grant].sort(),
+        ]),
+      ),
+      mfaVerifiedAt: principal.mfaVerifiedAt?.toISOString() ?? null,
+    };
+  }
 
   // ---- Refunds ----
 

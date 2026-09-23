@@ -21,7 +21,7 @@ tests. Every screen exists in **English and Hindi**.
 
 ---
 
-## 2. Customer app (Android / iOS)
+## 2. Customer app (Android / iOS, React Native + Expo)
 
 ```mermaid
 flowchart TD
@@ -83,7 +83,7 @@ flowchart TD
 
 ---
 
-## 3. Worker app (Android; PWA acceptable for the pilot)
+## 3. Worker app (Android / iOS, React Native + Expo)
 
 ```mermaid
 flowchart TD

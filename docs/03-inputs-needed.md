@@ -2,21 +2,23 @@
 
 ## Decided (22 Sep 2026)
 
-| Topic           | Decision                                                                                                 |
-| --------------- | -------------------------------------------------------------------------------------------------------- |
-| Booking sources | Customer self-booking from day 1 **and** manual booking by operations (`CUSTOMER_APP`, `ADMIN`).         |
-| First service   | HH60 House Help. Catalog is fully data-driven for later services.                                        |
-| Stack           | TypeScript, NestJS, PostgreSQL, Next.js admin; modular monolith, one database.                           |
-| Mobile          | Native customer and worker apps on the same API; PWA allowed for the worker pilot.                       |
-| Languages       | English and Hindi from the start; more languages as data.                                                |
-| Booking rules   | Database is the final authority on availability; original promise stored permanently; full audit trail.  |
-| Launch city     | Noida — configured as data, not in code.                                                                 |
-| Pricing         | Rule-based (service, zone, duration, time, tax, discount, promo, extra charges); worker payout separate. |
-| Accounts        | All production accounts company-owned; developers get role-based access.                                 |
-| Authentication  | Customers and workers: phone + OTP, no passwords. Staff: email + password + authenticator app (MFA).     |
-| Staff roles     | Eight roles with granular permissions; no universal admin; PII masked unless revealed (audited).         |
-| Payments        | Razorpay first, behind a provider interface; paid only on server-verified gateway events.                |
-| OTP delivery    | Behind a provider interface; MSG91 adapter first. Test OTP only in automated tests.                      |
+| Topic                | Decision                                                                                                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Booking sources      | Customer self-booking from day 1 **and** manual booking by operations (`CUSTOMER_APP`, `ADMIN`).                                                 |
+| First service        | HH60 House Help. Catalog is fully data-driven for later services.                                                                                |
+| Stack                | TypeScript, NestJS, PostgreSQL, Next.js admin; modular monolith, one database.                                                                   |
+| Mobile               | Native customer and worker apps on the same API; PWA allowed for the worker pilot.                                                               |
+| Languages            | English and Hindi from the start; more languages as data.                                                                                        |
+| Booking rules        | Database is the final authority on availability; original promise stored permanently; full audit trail.                                          |
+| Launch city          | Noida — configured as data, not in code.                                                                                                         |
+| Pricing              | Rule-based (service, zone, duration, time, tax, discount, promo, extra charges); worker payout separate.                                         |
+| Accounts             | All production accounts company-owned; developers get role-based access.                                                                         |
+| Authentication       | Customers and workers: phone + OTP, no passwords. Staff: email + password + authenticator app (MFA).                                             |
+| Staff roles          | Eight roles with granular permissions; no universal admin; PII masked unless revealed (audited).                                                 |
+| Payments             | Razorpay first, behind a provider interface; paid only on server-verified gateway events.                                                        |
+| OTP delivery         | Behind a provider interface; MSG91 adapter first. Test OTP only in automated tests.                                                              |
+| Mobile apps (23 Sep) | React Native + Expo for the customer and worker apps (one TypeScript codebase each for Android and iOS; shares the API client and domain rules). |
+| Maps (23 Sep)        | Google Maps Platform: map pin and address search in the apps; company Google Cloud billing account.                                              |
 
 ## Still needed from One Tappe
 
@@ -38,7 +40,7 @@
 | 14  | Company cloud storage bucket (S3-compatible, encrypted, private) for worker documents                                                         | Production start                       |
 | 15  | Create `main` and apply the GitHub ruleset and security settings in [09-github-controls.md](09-github-controls.md) (repository admin)         | Merge safety (before UI work)          |
 | 16  | Cancellation and refund rules (who pays what, when)                                                                                           | Replacing the default full-refund rule |
-| 17  | Maps provider for the apps' location screen (Google Maps Platform or Mappls)                                                                  | Customer app location step (before UI) |
+| 17  | Google Maps Platform keys (Android, iOS, web), restricted to the apps' identifiers, from the company Google Cloud account                     | Customer app location step (before UI) |
 | 18  | Live worker location on the customer's tracking screen at launch, or status-based tracking only                                               | Tracking scope                         |
 | 19  | Named on-call people (and phone numbers) to be paged for SOS / critical safety incidents                                                      | Safety escalation                      |
 | 20  | How workers are paid: payout frequency, bank transfer method (manual batch / RazorpayX), who approves                                         | Worker payouts                         |

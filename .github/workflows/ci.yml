@@ -57,6 +57,8 @@ jobs:
         with: { node-version-file: .nvmrc, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @onetappe/domain test
+      - name: Shared API client unit tests
+        run: pnpm --filter @onetappe/api-client test
 
   migration-guard:
     runs-on: ubuntu-latest
