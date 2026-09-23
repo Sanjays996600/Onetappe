@@ -134,11 +134,11 @@ and 247 tests passing, and CI plus the Security workflow green.
 
 ## Applications
 
-| Component    | Status      | Must be done | Notes                                                                                        |
-| ------------ | ----------- | ------------ | -------------------------------------------------------------------------------------------- |
-| Customer app | NOT STARTED | Next         | Vertical slice next. Tokens in the Keychain / Keystore; SalesIQ SDK; maps SDK once chosen    |
-| Worker app   | NOT STARTED | Next         | Same slice; retry-safe job steps are ready                                                   |
-| Admin panel  | NOT STARTED | Next         | Next.js with a BFF (httpOnly session cookie); must send `expectedVersion` on booking actions |
+| Component    | Status      | Must be done | Notes                                                                                                                                                                                                                                                                                                      |
+| ------------ | ----------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Customer app | NOT STARTED | Next         | Vertical slice next. Tokens in the Keychain / Keystore; SalesIQ SDK; maps SDK once chosen                                                                                                                                                                                                                  |
+| Worker app   | NOT STARTED | Next         | Same slice; retry-safe job steps are ready                                                                                                                                                                                                                                                                 |
+| Admin panel  | PARTIAL     | Next         | Built and browser-tested (`e2e/tests/admin.spec.ts`): sign-in with an authenticator, invitations, the live board, booking search, detail and trace, versioned actions, staff management and system status. Still to build: support, safety, refunds, worker verification, customers, configuration screens |
 
 ## What is left before the UI slice
 

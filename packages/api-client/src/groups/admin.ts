@@ -1,7 +1,12 @@
 import { z } from 'zod';
 import type { HttpClient } from '../http.js';
+import { NoContent } from '../schemas/common.js';
 import {
   AdminBookingSchema,
+  CitySchema,
+  InvitationSchema,
+  StaffCreatedSchema,
+  StaffMemberSchema,
   BookingRowSchema,
   InterventionSchema,
   StaffMeSchema,
@@ -21,6 +26,29 @@ export function adminApi(http: HttpClient) {
     http.request(InterventionSchema, 'POST', `/admin/bookings/${id}/${action}`, { body });
   return {
     me: () => http.request(StaffMeSchema, 'GET', '/admin/me'),
+    config: {
+      cities: () => http.request(z.array(CitySchema), 'GET', '/admin/config/cities'),
+    },
+    /** Staff accounts (user.manage; changes need a recent authenticator check). */
+    staff: {
+      list: () => http.request(z.array(StaffMemberSchema), 'GET', '/admin/staff'),
+      invite: (input: {
+        email: string;
+        fullName: string;
+        grants: Array<{ role: string; cityId: string | null }>;
+        reason: string;
+      }) => http.request(StaffCreatedSchema, 'POST', '/admin/staff', { body: input }),
+      grant: (id: string, input: { role: string; cityId: string | null; reason: string }) =>
+        http.request(NoContent, 'POST', `/admin/staff/${id}/roles`, { body: input }),
+      revoke: (id: string, input: { role: string; cityId: string | null; reason: string }) =>
+        http.request(NoContent, 'POST', `/admin/staff/${id}/roles/revoke`, { body: input }),
+      setStatus: (id: string, input: { status: 'ACTIVE' | 'SUSPENDED'; reason: string }) =>
+        http.request(NoContent, 'POST', `/admin/staff/${id}/status`, { body: input }),
+      resetMfa: (id: string, input: { reason: string }) =>
+        http.request(NoContent, 'POST', `/admin/staff/${id}/reset-mfa`, { body: input }),
+      reinvite: (id: string, input: { reason: string }) =>
+        http.request(InvitationSchema, 'POST', `/admin/staff/${id}/invitation`, { body: input }),
+    },
     systemStatus: () => http.request(SystemStatusSchema, 'GET', '/admin/system/status'),
     bookings: {
       search: (

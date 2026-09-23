@@ -20,6 +20,9 @@ Launching in Noida with **HH60 House Help**; services, areas and prices are conf
 
 ```
 apps/api          NestJS API, SQL migrations, integration tests
+apps/admin        Operations panel (Next.js; server-side session, no tokens in the browser)
+packages/api-client  Typed API client shared by the admin panel and the mobile apps
+e2e               Browser tests of the whole system (Playwright)
 packages/domain   Booking state machine, pricing and capacity rules (no framework code)
 infra             Local PostgreSQL via docker compose
 ```
@@ -74,6 +77,26 @@ protection that makes them required is a repository setting; see
 The first staff account of a new environment is created once with
 `pnpm --filter @onetappe/api staff:bootstrap --email <email> --name "<name>"`; all later
 accounts are invited from the admin panel.
+
+## Browser tests (end to end)
+
+`e2e/` starts the real system and drives it with Playwright:
+
+- a fresh `onetappe_e2e` database;
+- the API and background worker from `apps/api/dist`;
+- the admin panel from its production build.
+
+Build first, then run:
+
+```bash
+pnpm build
+pnpm --filter @onetappe/e2e exec playwright install chromium   # once
+pnpm --filter @onetappe/e2e test
+```
+
+`E2E_OWNER_URL` points at the database; its name must contain `e2e`. `E2E_CHROMIUM_PATH`
+uses an already installed Chromium. Service logs and traces of a failed run are in
+`e2e/.state/logs` and `e2e/test-results`.
 
 ## Database changes
 

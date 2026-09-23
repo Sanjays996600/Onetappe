@@ -124,6 +124,37 @@ describe('admin panel calls', () => {
     ).rejects.toMatchObject({ status: 409, code: 'STALE_BOOKING' });
   });
 
+  it('staff management calls (super administrator)', async () => {
+    const member = await createStaff(app, ['SUPER_ADMIN']);
+    const client = realClient(app);
+    const step = await client.auth.staff.login({ email: member.email, password: member.password });
+    if (step.step !== 'MFA_ENROLL') throw new Error('expected enrolment');
+    client.signIn(
+      await client.auth.staff.completeMfa({
+        challengeToken: step.challengeToken,
+        code: totpAt(step.totpSecret, totpStep(new Date())),
+      }),
+    );
+    const reason = 'Contract check of staff calls';
+    const cities = await client.admin.config.cities();
+    expect(cities.map((c) => c.id)).toContain(world.cityId);
+    const created = await client.admin.staff.invite({
+      email: `contract.${Date.now()}@onetappe.test`,
+      fullName: 'Contract Check',
+      grants: [{ role: 'DISPATCHER', cityId: world.cityId }],
+      reason,
+    });
+    expect(created.invitation.token.length).toBeGreaterThan(20);
+    await client.admin.staff.grant(created.userId, { role: 'AUDITOR', cityId: null, reason });
+    await client.admin.staff.revoke(created.userId, { role: 'AUDITOR', cityId: null, reason });
+    await client.admin.staff.setStatus(created.userId, { status: 'SUSPENDED', reason });
+    await client.admin.staff.setStatus(created.userId, { status: 'ACTIVE', reason });
+    await client.admin.staff.resetMfa(created.userId, { reason });
+    await client.admin.staff.reinvite(created.userId, { reason });
+    const listed = (await client.admin.staff.list()).find((m) => m.id === created.userId);
+    expect(listed?.roles).toEqual([{ role: 'DISPATCHER', cityId: world.cityId }]);
+  });
+
   it('an expired access token is refreshed transparently', async () => {
     const member = await createStaff(app, ['AUDITOR']);
     const client = realClient(app);

@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 # Each check is its own job so branch protection can require them individually:
-#   format · lint · typecheck · domain-tests · migration-guard · migrations · integration-tests
+#   format · lint · typecheck · domain-tests · migration-guard · migrations · integration-tests · e2e
 jobs:
   format:
     runs-on: ubuntu-latest
@@ -59,6 +59,8 @@ jobs:
       - run: pnpm --filter @onetappe/domain test
       - name: Shared API client unit tests
         run: pnpm --filter @onetappe/api-client test
+      - name: Admin panel unit tests
+        run: pnpm --filter @onetappe/admin test
 
   migration-guard:
     runs-on: ubuntu-latest
@@ -141,3 +143,41 @@ jobs:
           sudo systemctl stop clamav-daemon clamav-freshclam || true
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @onetappe/api test
+
+  e2e:
+    # The whole system in a real browser: API + background worker + admin panel, built as
+    # for production, against a fresh PostgreSQL database with the least-privilege role.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: onetappe, POSTGRES_PASSWORD: onetappe, POSTGRES_DB: onetappe_e2e }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U onetappe -d onetappe_e2e"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      E2E_OWNER_URL: postgres://onetappe:onetappe@localhost:5432/onetappe_e2e
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Install the browser
+        run: pnpm --filter @onetappe/e2e exec playwright install --with-deps chromium
+      - name: Browser tests
+        run: pnpm --filter @onetappe/e2e test
+      - name: Keep traces and service logs of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: |
+            e2e/test-results
+            e2e/playwright-report
+            e2e/.state/logs
+          retention-days: 7

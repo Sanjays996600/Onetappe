@@ -33,25 +33,25 @@ From then on, work reaches `main` only through pull requests.
 
 ## 2. Ruleset for `main` (Settings → Rules → Rulesets → New branch ruleset)
 
-| Setting                                                            | Value                                                                                                                                                                 |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ruleset name                                                       | `main protection`                                                                                                                                                     |
-| Enforcement status                                                 | **Active**                                                                                                                                                            |
-| Bypass list                                                        | **Empty** (not even admins; emergencies use a reviewed pull request too)                                                                                              |
-| Target branches                                                    | Include default branch (`main`)                                                                                                                                       |
-| Restrict deletions                                                 | ✅                                                                                                                                                                    |
-| Block force pushes                                                 | ✅                                                                                                                                                                    |
-| Require linear history                                             | ✅ (squash or rebase merges only)                                                                                                                                     |
-| Require a pull request before merging                              | ✅                                                                                                                                                                    |
-| → Required approvals                                               | **1** (raise to 2 once the team has 3+ engineers)                                                                                                                     |
-| → Dismiss stale pull request approvals when new commits are pushed | ✅                                                                                                                                                                    |
-| → Require review from Code Owners                                  | ✅                                                                                                                                                                    |
-| → Require approval of the most recent reviewable push              | ✅ (the author cannot approve their own last change)                                                                                                                  |
-| → Require conversation resolution before merging                   | ✅                                                                                                                                                                    |
-| Require status checks to pass                                      | ✅, with **Require branches to be up to date before merging** ✅                                                                                                      |
-| → Status checks (add each by name)                                 | `format`, `lint`, `typecheck`, `domain-tests`, `migration-guard`, `migrations`, `integration-tests`, `secret-scan`, `dependency-audit`, `dependency-review`, `codeql` |
-| Require code scanning results                                      | ✅ CodeQL, alerts ≥ **High**; security alerts ≥ **High**                                                                                                              |
-| Require signed commits                                             | Optional (recommended once everyone has signing set up)                                                                                                               |
+| Setting                                                            | Value                                                                                                                                                                        |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ruleset name                                                       | `main protection`                                                                                                                                                            |
+| Enforcement status                                                 | **Active**                                                                                                                                                                   |
+| Bypass list                                                        | **Empty** (not even admins; emergencies use a reviewed pull request too)                                                                                                     |
+| Target branches                                                    | Include default branch (`main`)                                                                                                                                              |
+| Restrict deletions                                                 | ✅                                                                                                                                                                           |
+| Block force pushes                                                 | ✅                                                                                                                                                                           |
+| Require linear history                                             | ✅ (squash or rebase merges only)                                                                                                                                            |
+| Require a pull request before merging                              | ✅                                                                                                                                                                           |
+| → Required approvals                                               | **1** (raise to 2 once the team has 3+ engineers)                                                                                                                            |
+| → Dismiss stale pull request approvals when new commits are pushed | ✅                                                                                                                                                                           |
+| → Require review from Code Owners                                  | ✅                                                                                                                                                                           |
+| → Require approval of the most recent reviewable push              | ✅ (the author cannot approve their own last change)                                                                                                                         |
+| → Require conversation resolution before merging                   | ✅                                                                                                                                                                           |
+| Require status checks to pass                                      | ✅, with **Require branches to be up to date before merging** ✅                                                                                                             |
+| → Status checks (add each by name)                                 | `format`, `lint`, `typecheck`, `domain-tests`, `migration-guard`, `migrations`, `integration-tests`, `e2e`, `secret-scan`, `dependency-audit`, `dependency-review`, `codeql` |
+| Require code scanning results                                      | ✅ CodeQL, alerts ≥ **High**; security alerts ≥ **High**                                                                                                                     |
+| Require signed commits                                             | Optional (recommended once everyone has signing set up)                                                                                                                      |
 
 A status check appears in the picker only after it has run once on a pull request. Open
 one small pull request after creating `main`, then add the checks.
@@ -96,14 +96,15 @@ credential available only to that step.
 
 ## 6. What each check proves
 
-| Check                         | Proves                                                                                                                     |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `format`, `lint`, `typecheck` | Code style, strict type-checked lint rules, TypeScript types, production build                                             |
-| `domain-tests`                | State machine, pricing and capacity rules; the shared API client (retries, token refresh, errors)                          |
-| `migration-guard`             | No existing migration was edited, renamed or removed; new ones are numbered after the last                                 |
-| `migrations`                  | All migrations apply to an empty database, re-running applies nothing, generated DB types are current                      |
-| `integration-tests`           | Every API test file, over HTTP against PostgreSQL 16, run as the least-privilege role, with real ClamAV and an S3 emulator |
-| `secret-scan`                 | No secrets in the full git history (gitleaks)                                                                              |
-| `dependency-audit`            | No known high or critical vulnerabilities in dependencies                                                                  |
-| `dependency-review`           | A pull request adds no vulnerable dependency                                                                               |
-| `codeql`                      | Static security analysis (security-extended queries)                                                                       |
+| Check                         | Proves                                                                                                                                               |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `format`, `lint`, `typecheck` | Code style, strict type-checked lint rules, TypeScript types, production build                                                                       |
+| `domain-tests`                | State machine, pricing and capacity rules; the shared API client (retries, token refresh, errors)                                                    |
+| `migration-guard`             | No existing migration was edited, renamed or removed; new ones are numbered after the last                                                           |
+| `migrations`                  | All migrations apply to an empty database, re-running applies nothing, generated DB types are current                                                |
+| `integration-tests`           | Every API test file, over HTTP against PostgreSQL 16, run as the least-privilege role, with real ClamAV and an S3 emulator                           |
+| `e2e`                         | The system in a real browser: API, background worker and admin panel built as for production, against a fresh database with the least-privilege role |
+| `secret-scan`                 | No secrets in the full git history (gitleaks)                                                                                                        |
+| `dependency-audit`            | No known high or critical vulnerabilities in dependencies                                                                                            |
+| `dependency-review`           | A pull request adds no vulnerable dependency                                                                                                         |
+| `codeql`                      | Static security analysis (security-extended queries)                                                                                                 |

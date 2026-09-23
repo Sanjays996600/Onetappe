@@ -167,3 +167,29 @@ export const InterventionSchema = z.union([
   AdminBookingSchema,
   z.object({ booking: AdminBookingSchema }).loose(),
 ]);
+
+export const RoleGrantSchema = z.object({ role: z.string(), cityId: Uuid.nullable() });
+export type RoleGrant = z.infer<typeof RoleGrantSchema>;
+
+export const StaffMemberSchema = z.object({
+  id: Uuid,
+  email: z.string().nullable(),
+  fullName: z.string().nullable(),
+  status: z.string(),
+  mfaEnrolled: z.boolean(),
+  roles: z.array(RoleGrantSchema),
+});
+export type StaffMember = z.infer<typeof StaffMemberSchema>;
+
+export const InvitationSchema = z.object({ token: z.string(), expiresAt: IsoDate });
+export type Invitation = z.infer<typeof InvitationSchema>;
+
+export const StaffCreatedSchema = z.object({ userId: Uuid, invitation: InvitationSchema });
+
+export const CitySchema = z.object({
+  id: Uuid,
+  code: z.string(),
+  name: z.string(),
+  is_active: z.boolean(),
+});
+export type City = z.infer<typeof CitySchema>;
