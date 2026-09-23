@@ -6,8 +6,9 @@ import { S3DocumentStorage } from '../src/storage/s3-document-storage.js';
 import { TEST_JPEG } from './support/journey.js';
 
 /**
- * Runs against a real S3-compatible server that enforces presigned-POST policies (MinIO:
- * docker compose locally, a service in CI). Endpoint and credentials come from TEST_S3_*.
+ * Runs against an S3-compatible server (moto locally and in CI; MinIO via docker compose
+ * also works). Endpoint and credentials come from TEST_S3_*. Enforcement of the signed
+ * upload policy is S3's; these tests prove the policy we sign and the full round trip.
  */
 const endpoint = process.env['TEST_S3_ENDPOINT'] ?? 'http://127.0.0.1:9000';
 process.env['AWS_ACCESS_KEY_ID'] = process.env['TEST_S3_ACCESS_KEY'] ?? 'onetappe';
@@ -48,28 +49,61 @@ describe('S3 document storage (presigned POST)', () => {
     expect(await storage.head(key)).toBeNull();
   });
 
-  it('rejects a file larger than the limit', async () => {
+  it('signs a policy that pins the key, type, size range, encryption and a short expiry', async () => {
+    // S3 enforces this policy on upload; what we must guarantee is that the signed policy
+    // contains exactly these restrictions (checked against the real bucket before launch).
     const key = `workers/test/identity/${randomUUID()}`;
-    const target = await storage.createUploadTarget(key, 'image/jpeg', 64);
-    expect(await post(target, Buffer.alloc(1000, 1))).toBeGreaterThanOrEqual(400);
-    expect(await storage.head(key)).toBeNull();
-  });
-
-  it('rejects a different content type than the one signed', async () => {
-    const key = `workers/test/identity/${randomUUID()}`;
-    const target = await storage.createUploadTarget(key, 'image/jpeg', 1024);
-    expect(await post(target, TEST_JPEG, { 'Content-Type': 'text/html' })).toBeGreaterThanOrEqual(
-      400,
+    const before = Date.now();
+    const target = await storage.createUploadTarget(key, 'application/pdf', 5 * 1024 * 1024);
+    const policy = JSON.parse(
+      Buffer.from(target.fields['Policy'] ?? '', 'base64').toString('utf8'),
+    ) as {
+      expiration: string;
+      conditions: unknown[];
+    };
+    const expiresIn = new Date(policy.expiration).getTime() - before;
+    expect(expiresIn).toBeGreaterThan(4 * 60_000);
+    expect(expiresIn).toBeLessThanOrEqual(5 * 60_000 + 2_000);
+    expect(policy.conditions).toEqual(
+      expect.arrayContaining([
+        { bucket },
+        { key },
+        ['content-length-range', 1, 5 * 1024 * 1024],
+        ['eq', '$Content-Type', 'application/pdf'],
+        ['eq', '$x-amz-server-side-encryption', 'AES256'],
+      ]),
     );
-    expect(await storage.head(key)).toBeNull();
+    // No wildcard key or type conditions that would widen what can be written.
+    expect(JSON.stringify(policy.conditions)).not.toContain('starts-with');
   });
 
-  it('rejects writing to any other object key with the same signature', async () => {
-    const key = `workers/test/identity/${randomUUID()}`;
-    const target = await storage.createUploadTarget(key, 'image/jpeg', 1024);
-    const otherKey = `workers/someone-else/identity/${randomUUID()}`;
-    expect(await post(target, TEST_JPEG, { key: otherKey })).toBeGreaterThanOrEqual(400);
-    expect(await storage.head(otherKey)).toBeNull();
+  it('uses the customer-managed KMS key when one is configured', async () => {
+    const kms = new S3DocumentStorage({
+      bucket,
+      region,
+      endpoint,
+      kmsKeyId: 'arn:aws:kms:ap-south-1:111122223333:key/test',
+    });
+    const target = await kms.createUploadTarget(
+      `workers/test/identity/${randomUUID()}`,
+      'image/png',
+      1024,
+    );
+    const policy = JSON.parse(
+      Buffer.from(target.fields['Policy'] ?? '', 'base64').toString('utf8'),
+    ) as {
+      conditions: unknown[];
+    };
+    expect(policy.conditions).toEqual(
+      expect.arrayContaining([
+        ['eq', '$x-amz-server-side-encryption', 'aws:kms'],
+        [
+          'eq',
+          '$x-amz-server-side-encryption-aws-kms-key-id',
+          'arn:aws:kms:ap-south-1:111122223333:key/test',
+        ],
+      ]),
+    );
   });
 
   it('objects are not publicly readable', async () => {

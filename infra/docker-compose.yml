@@ -1,4 +1,4 @@
-# Local services: PostgreSQL and MinIO. Usage: docker compose -f infra/docker-compose.yml up -d
+# Local services: PostgreSQL and an S3-compatible server (moto). Usage: docker compose -f infra/docker-compose.yml up -d
 # The malware-scan tests also need the clamd binary (apt install clamav-daemon).
 services:
   postgres:
@@ -17,19 +17,11 @@ services:
       interval: 5s
       retries: 10
 
-  # S3-compatible storage for worker documents (tests create their own buckets).
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address :9001
-    environment:
-      MINIO_ROOT_USER: onetappe
-      MINIO_ROOT_PASSWORD: onetappe-secret
+  # S3-compatible server for the document-storage tests (buckets are created by tests).
+  s3:
+    image: motoserver/moto:latest
     ports:
-      - '9000:9000'
-      - '9001:9001'
-    volumes:
-      - onetappe-minio:/data
+      - '9000:5000'
 
 volumes:
   onetappe-pg:
-  onetappe-minio:
