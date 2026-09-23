@@ -39,7 +39,7 @@ export class LocalDocumentStorage implements DocumentStorage {
     const token = `${payload}.${hmacSha256Hex(this.signingKey, payload)}`;
     return Promise.resolve({
       method: 'PUT',
-      url: `${this.publicApiUrl.replace(/\/$/, '')}/api/v1/uploads/${token}`,
+      url: `${this.publicApiUrl.replace(/\/$/, '')}/api/v1/uploads?token=${encodeURIComponent(token)}`,
       headers: { 'content-type': 'application/octet-stream' },
       expiresAt: new Date(exp * 1000),
       maxBytes,

@@ -1,4 +1,4 @@
-import { Controller, HttpCode, Inject, Param, Put, Req } from '@nestjs/common';
+import { Controller, HttpCode, Inject, Put, Query, Req } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { Public } from '../auth/decorators.js';
 import { UnauthorizedError, ValidationError } from '../common/errors.js';
@@ -14,9 +14,17 @@ import { LocalDocumentStorage } from './local-document-storage.js';
 export class UploadController {
   constructor(@Inject(DOCUMENT_STORAGE) private readonly storage: DocumentStorage) {}
 
-  @Put(':token')
+  @Put()
   @HttpCode(204)
-  async upload(@Param('token') token: string, @Req() request: FastifyRequest): Promise<void> {
+  async upload(
+    @Query('token') token: string | undefined,
+    @Req() request: FastifyRequest,
+  ): Promise<void> {
+    if (!token)
+      throw new UnauthorizedError(
+        'UPLOAD_LINK_INVALID',
+        'This upload link is invalid or has expired',
+      );
     if (!(this.storage instanceof LocalDocumentStorage))
       throw new UnauthorizedError('UPLOAD_INVALID', 'Unknown upload');
     const claims = this.storage.verifyUploadToken(token);

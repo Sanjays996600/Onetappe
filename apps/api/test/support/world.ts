@@ -94,6 +94,10 @@ export interface World {
   readonly cityId: string;
   readonly zoneId: string;
   readonly pincode: string;
+  /** Zone centre; addresses near it are serviceable. */
+  readonly center: { readonly lat: number; readonly lng: number };
+  /** Tomorrow's date in India, YYYY-MM-DD. */
+  readonly day: string;
   readonly serviceId: string;
   readonly taskIds: readonly string[];
   readonly staffId: string;
@@ -156,6 +160,10 @@ export async function walkWorkerToActive(tx: Tx, workerId: string, staffId: stri
 }
 
 export interface WorldOptions {
+  /** Display names; codes stay unique per test world. */
+  readonly cityName?: string;
+  readonly zoneName?: string;
+  readonly center?: { readonly lat: number; readonly lng: number };
   readonly workers?: number;
   readonly workersRequired?: number;
   readonly shiftStartHour?: number;
@@ -174,6 +182,7 @@ export async function createWorld(db: Kysely<DB>, options: WorldOptions = {}): P
   const at = (hour: number, minute = 0) =>
     new Date(`${day}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00+05:30`);
   const pincode = uniquePincode();
+  const center = options.center ?? ZONE_CENTER;
 
   return inTransaction(db, SYSTEM, async (tx) => {
     const staff = await tx
@@ -186,7 +195,7 @@ export async function createWorld(db: Kysely<DB>, options: WorldOptions = {}): P
       .insertInto('city')
       .values({
         code: `C${suffix}`,
-        name: `City ${suffix}`,
+        name: options.cityName ?? `City ${suffix}`,
         state_name: 'Uttar Pradesh',
         is_active: true,
       })
@@ -197,9 +206,9 @@ export async function createWorld(db: Kysely<DB>, options: WorldOptions = {}): P
       .values({
         city_id: city.id,
         code: `Z${suffix}`,
-        name: `Zone ${suffix}`,
-        center_lat: String(ZONE_CENTER.lat),
-        center_lng: String(ZONE_CENTER.lng),
+        name: options.zoneName ?? `Zone ${suffix}`,
+        center_lat: String(center.lat),
+        center_lng: String(center.lng),
         service_radius_m: 5_000,
         is_active: true,
       })
@@ -269,6 +278,16 @@ export async function createWorld(db: Kysely<DB>, options: WorldOptions = {}): P
         service_id: service.id,
         base_amount_paise: 49_900,
         tax_rate_code: 'GST18',
+        valid_from: new Date('2020-01-01T00:00:00Z'),
+      })
+      .execute();
+    // Worker pay for the service, configured separately from the customer price.
+    await tx
+      .insertInto('payout_rule')
+      .values({
+        service_id: service.id,
+        base_payout_paise: 30_000,
+        travel_allowance_paise: 3_000,
         valid_from: new Date('2020-01-01T00:00:00Z'),
       })
       .execute();
@@ -350,6 +369,8 @@ export async function createWorld(db: Kysely<DB>, options: WorldOptions = {}): P
       cityId: city.id,
       zoneId: zone.id,
       pincode,
+      center,
+      day,
       serviceId: service.id,
       taskIds: tasks.map((t) => t.id),
       staffId: staff.id,
@@ -373,8 +394,8 @@ export async function createWorld(db: Kysely<DB>, options: WorldOptions = {}): P
               street: 'Main Road',
               pincode,
               city_name: 'Test City',
-              lat: String(ZONE_CENTER.lat + 0.005),
-              lng: String(ZONE_CENTER.lng + 0.005),
+              lat: String(center.lat + 0.005),
+              lng: String(center.lng + 0.005),
             })
             .returning('id')
             .executeTakeFirstOrThrow();
