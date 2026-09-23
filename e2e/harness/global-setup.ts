@@ -160,6 +160,8 @@ export default async function globalSetup() {
     WHATSAPP_PROVIDER: 'log',
     EMAIL_PROVIDER: 'log',
     CORS_ORIGINS: `${customerUrl},${workerUrl}`,
+    // The load test simulates many phones on different networks through one proxy hop.
+    TRUSTED_PROXY_HOPS: process.env['E2E_TRUSTED_PROXY_HOPS'] ?? '0',
     LOG_LEVEL: 'info',
     WORKER_METRICS_PORT: String(API_PORT + 50),
   };

@@ -3,19 +3,20 @@
 Home-services booking platform: customer app, worker app and operations panel on one API.
 Launching in Noida with **HH60 House Help**; services, areas and prices are configuration.
 
-| Document                                                                 | Contents                                                                                                 |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| [docs/01-system-design.md](docs/01-system-design.md)                     | Decisions, architecture, data model, booking engine, guarantees, status                                  |
-| [docs/02-ui-ux-screen-map.md](docs/02-ui-ux-screen-map.md)               | Customer app, worker app and admin panel screens with the APIs behind them                               |
-| [docs/03-inputs-needed.md](docs/03-inputs-needed.md)                     | Decisions log and the information still needed                                                           |
-| [docs/04-api-and-security.md](docs/04-api-and-security.md)               | Auth, roles, PII, full API list, payments, jobs, environments, CI                                        |
-| [docs/05-architecture.md](docs/05-architecture.md)                       | Component diagram, source of truth per data type, Zoho and Razorpay boundaries, tested failure behaviour |
-| [docs/06-security-review.md](docs/06-security-review.md)                 | Security review, open security items                                                                     |
-| [docs/07-operations-and-recovery.md](docs/07-operations-and-recovery.md) | Monitoring, alerts, backups, RPO/RTO, restore procedure                                                  |
-| [docs/08-provider-setup.md](docs/08-provider-setup.md)                   | Razorpay, MSG91, Zoho, FCM, email, S3, PostgreSQL setup and launch checks                                |
-| [docs/09-github-controls.md](docs/09-github-controls.md)                 | Exact GitHub ruleset and security settings                                                               |
-| [docs/10-system-matrix.md](docs/10-system-matrix.md)                     | Status of every component, and what must happen before UI and production                                 |
-| [docs/11-security-readiness.md](docs/11-security-readiness.md)           | Security and readiness review: data map, authorization, SOS, recovery, blockers before pilot/production  |
+| Document                                                                     | Contents                                                                                                 |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| [docs/01-system-design.md](docs/01-system-design.md)                         | Decisions, architecture, data model, booking engine, guarantees, status                                  |
+| [docs/02-ui-ux-screen-map.md](docs/02-ui-ux-screen-map.md)                   | Customer app, worker app and admin panel screens with the APIs behind them                               |
+| [docs/03-inputs-needed.md](docs/03-inputs-needed.md)                         | Decisions log and the information still needed                                                           |
+| [docs/04-api-and-security.md](docs/04-api-and-security.md)                   | Auth, roles, PII, full API list, payments, jobs, environments, CI                                        |
+| [docs/05-architecture.md](docs/05-architecture.md)                           | Component diagram, source of truth per data type, Zoho and Razorpay boundaries, tested failure behaviour |
+| [docs/06-security-review.md](docs/06-security-review.md)                     | Security review, open security items                                                                     |
+| [docs/07-operations-and-recovery.md](docs/07-operations-and-recovery.md)     | Monitoring, alerts, backups, RPO/RTO, restore procedure                                                  |
+| [docs/08-provider-setup.md](docs/08-provider-setup.md)                       | Razorpay, MSG91, Zoho, FCM, email, S3, PostgreSQL setup and launch checks                                |
+| [docs/09-github-controls.md](docs/09-github-controls.md)                     | Exact GitHub ruleset and security settings                                                               |
+| [docs/10-system-matrix.md](docs/10-system-matrix.md)                         | Status of every component, and what must happen before UI and production                                 |
+| [docs/12-production-readiness-gate.md](docs/12-production-readiness-gate.md) | Engineering gate: verified status of every component, load and concurrency results, open questions       |
+| [docs/11-security-readiness.md](docs/11-security-readiness.md)               | Security and readiness review: data map, authorization, SOS, recovery, blockers before pilot/production  |
 
 ## Repository
 
