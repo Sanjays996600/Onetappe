@@ -7,6 +7,8 @@ export const WorkerProfileSchema = z.object({
   status: z.string(),
   statusReason: z.string().nullable(),
   canWork: z.boolean(),
+  /** Receiving offers (the worker's own switch; off after a suspension). */
+  online: z.boolean(),
   fullName: z.string().nullable(),
   phone: z.string(),
   preferredLocale: z.string(),

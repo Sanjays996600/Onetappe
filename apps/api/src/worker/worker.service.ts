@@ -61,8 +61,10 @@ export class WorkerService {
       .selectFrom('worker_profile as w')
       .innerJoin('app_user as u', 'u.id', 'w.user_id')
       .leftJoin('address as a', 'a.id', 'w.home_address_id')
+      .leftJoin('worker_presence as p', 'p.worker_id', 'w.user_id')
       .select([
         'w.user_id',
+        'p.is_online',
         'w.worker_code',
         'w.status',
         'w.status_reason',
@@ -92,6 +94,7 @@ export class WorkerService {
       status: row.status,
       statusReason: row.status_reason,
       canWork: WORKING_STATUSES.includes(row.status),
+      online: row.is_online === true,
       fullName: row.full_name,
       phone: row.phone_e164,
       preferredLocale: row.preferred_locale,

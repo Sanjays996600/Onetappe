@@ -8,3 +8,6 @@ apps/api/src/database/db.generated.ts
 e2e/.state
 e2e/test-results
 e2e/playwright-report
+**/dist-web
+**/.expo
+**/expo-env.d.ts

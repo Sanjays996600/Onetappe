@@ -61,6 +61,8 @@ jobs:
         run: pnpm --filter @onetappe/api-client test
       - name: Admin panel unit tests
         run: pnpm --filter @onetappe/admin test
+      - name: Mobile kit unit tests
+        run: pnpm --filter @onetappe/mobile-kit test
 
   migration-guard:
     runs-on: ubuntu-latest

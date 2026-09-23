@@ -1,0 +1,35 @@
+{
+  "name": "@onetappe/mobile-kit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@onetappe/api-client": "workspace:*",
+    "@onetappe/domain": "workspace:*"
+  },
+  "peerDependencies": {
+    "expo-secure-store": "*",
+    "react": "*",
+    "react-native": "*",
+    "react-native-safe-area-context": "*"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.0",
+    "expo-secure-store": "~57.0.4",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.1",
+    "react-native-safe-area-context": "~5.7.0"
+  }
+}

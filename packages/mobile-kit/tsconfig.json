@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM"],
+    "noEmit": true,
+    "verbatimModuleSyntax": false,
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": ["src", "vitest.config.ts"]
+}

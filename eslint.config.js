@@ -1,6 +1,7 @@
 // @ts-check
 import js from '@eslint/js';
 import globals from 'globals';
+import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
@@ -15,6 +16,9 @@ export default tseslint.config(
       'e2e/.state/**',
       'e2e/test-results/**',
       'e2e/playwright-report/**',
+      '**/dist-web/**',
+      '**/.expo/**',
+      '**/expo-env.d.ts',
     ],
   },
   js.configs.recommended,
@@ -37,6 +41,16 @@ export default tseslint.config(
     },
   },
   {
+    files: ['**/*.tsx', 'packages/mobile-kit/src/**/*.ts'],
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'error',
+      // `onPress={() => setX(1)}` is the React idiom.
+      '@typescript-eslint/no-confusing-void-expression': ['error', { ignoreArrowShorthand: true }],
+    },
+  },
+  {
     // Tests assert on rows they just created; `!` keeps them readable.
     files: ['**/*.test.ts', '**/test/**/*.ts'],
     rules: { '@typescript-eslint/no-non-null-assertion': 'off' },
@@ -44,5 +58,11 @@ export default tseslint.config(
   {
     files: ['**/*.js', '**/*.mjs'],
     ...tseslint.configs.disableTypeChecked,
+  },
+  {
+    // Metro loads its configuration with require().
+    files: ['**/metro.config.js'],
+    languageOptions: { sourceType: 'commonjs' },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
 );
