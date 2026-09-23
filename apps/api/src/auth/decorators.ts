@@ -48,11 +48,11 @@ export const RequestMeta = createParamDecorator(
     _: unknown,
     ctx: ExecutionContext,
   ): { requestId: string; ip: string | null; userAgent: string | null } => {
-    const request = ctx.switchToHttp().getRequest<AuthenticatedRequest>();
+    const request = ctx.switchToHttp().getRequest<AuthenticatedRequest & { clientIp?: string }>();
     const agent = request.headers['user-agent'];
     return {
       requestId: request.requestId,
-      ip: request.ip || null,
+      ip: request.clientIp || request.ip || null,
       userAgent: typeof agent === 'string' ? agent : null,
     };
   },

@@ -52,10 +52,12 @@ If the provider fails, the code is withdrawn and no cooldown is spent. There is 
 or master code. The `test` provider starts only when `APP_ENV=test`, and `console` only in
 local/test. **Tests:** `auth.test.ts`.
 
-Open: the per-IP limit uses the client IP from `X-Forwarded-For`. This is trusted only in
-staging and production, where the load balancer sets it (Fastify `trustProxy`). The
-limits live in PostgreSQL, so they hold across instances, but edge limits (S1) are still
-needed against volumetric abuse.
+The per-IP limit uses the client IP. Only the `X-Forwarded-For` entries added by our own
+proxies are trusted (`TRUSTED_PROXY_HOPS`, 1 = the load balancer, the default in staging
+and production), so a caller cannot choose its IP by sending the header. The admin panel's
+server may pass a staff member's IP only with the shared `BFF_SHARED_SECRET` key.
+**Test:** `client-ip.test.ts`. The limits live in PostgreSQL, so they hold across
+instances, but edge limits (S1) are still needed against volumetric abuse.
 
 ## 3. Sessions
 

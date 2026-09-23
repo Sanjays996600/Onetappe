@@ -189,10 +189,12 @@ policies):
 
 ## 9. Secrets and other settings
 
-| Variable                                                           | Notes                                                                                              |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| `AUTH_TOKEN_SECRET`, `OTP_HASH_SECRET`, `VERIFICATION_CODE_SECRET` | 32+ random bytes each (`openssl rand -base64 32`); different per environment                       |
-| `DATA_ENCRYPTION_KEY`                                              | 32 random bytes, base64. Rotating it needs a re-encryption step (runbook to write before rotation) |
-| `METRICS_TOKEN`                                                    | 32+ random characters; given to the Prometheus scraper only                                        |
-| `CORS_ORIGINS`                                                     | Exact admin panel / PWA origins                                                                    |
-| `LOG_LEVEL`                                                        | `info` in production                                                                               |
+| Variable                                                           | Notes                                                                                                   |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `AUTH_TOKEN_SECRET`, `OTP_HASH_SECRET`, `VERIFICATION_CODE_SECRET` | 32+ random bytes each (`openssl rand -base64 32`); different per environment                            |
+| `DATA_ENCRYPTION_KEY`                                              | 32 random bytes, base64. Rotating it needs a re-encryption step (runbook to write before rotation)      |
+| `METRICS_TOKEN`                                                    | 32+ random characters; given to the Prometheus scraper only                                             |
+| `CORS_ORIGINS`                                                     | Exact admin panel / PWA origins                                                                         |
+| `TRUSTED_PROXY_HOPS`                                               | Number of our proxies that add `X-Forwarded-For` (1 = load balancer; the default in staging/production) |
+| `BFF_SHARED_SECRET`                                                | 32+ random characters, shared only by the API and the admin panel server                                |
+| `LOG_LEVEL`                                                        | `info` in production                                                                                    |

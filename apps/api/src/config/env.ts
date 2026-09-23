@@ -117,6 +117,16 @@ const EnvSchema = z
 
     /** Comma-separated origins allowed to call the API from browsers (admin panel). */
     CORS_ORIGINS: z.string().default(''),
+    /**
+     * Proxies in front of the API that add X-Forwarded-For (the load balancer = 1). Only
+     * that many hops are trusted, so a client cannot choose its own IP by sending the header.
+     */
+    TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(5).optional(),
+    /**
+     * Shared with the admin panel's server (BFF), which calls the API for staff: with this
+     * key it may pass the staff member's own IP (x-onetappe-client-ip) for audit and limits.
+     */
+    BFF_SHARED_SECRET: z.string().min(32).optional(),
   })
   .superRefine((env, ctx) => {
     const fail = (message: string): void => {

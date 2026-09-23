@@ -3,6 +3,7 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import type { INestApplication } from '@nestjs/common';
 import { AppModule } from './app.module.js';
 import { AppErrorFilter } from './common/app-error.filter.js';
+import { registerClientIp, trustedProxyHops } from './common/http/client-ip.js';
 import { registerRequestId } from './common/http/request-id.js';
 import { registerSecurityHeaders } from './common/http/security-headers.js';
 import { registerHttpObservability } from './observability/http-observability.js';
@@ -17,24 +18,28 @@ export const API_PREFIX = 'api/v1';
 /** Largest JSON body accepted (worker document uploads have their own limit). */
 const BODY_LIMIT_BYTES = 1024 * 1024;
 
-export function createAdapter(env: Pick<Env, 'APP_ENV'>): FastifyAdapter {
+export function createAdapter(env: Pick<Env, 'APP_ENV' | 'TRUSTED_PROXY_HOPS'>): FastifyAdapter {
+  const hops = trustedProxyHops(env);
   return new FastifyAdapter({
     bodyLimit: BODY_LIMIT_BYTES,
-    // Behind the load balancer the client IP comes from X-Forwarded-For.
-    trustProxy: env.APP_ENV === 'staging' || env.APP_ENV === 'production',
+    // Behind the load balancer the client IP comes from X-Forwarded-For, but only the
+    // entries added by our own proxies are trusted (a client cannot pick its own IP).
+    // (Same as proxy-addr's numeric setting: trust the first `hops` addresses from the socket.)
+    trustProxy: hops > 0 ? (_address: string, hop: number) => hop < hops : false,
   });
 }
 
 /** HTTP configuration shared by the server and the tests. */
 export function configureApp(
   app: INestApplication,
-  env: Pick<Env, 'APP_ENV' | 'CORS_ORIGINS'>,
+  env: Pick<Env, 'APP_ENV' | 'CORS_ORIGINS' | 'BFF_SHARED_SECRET'>,
 ): void {
   // One version prefix for every client; breaking changes go to /api/v2.
   app.setGlobalPrefix(API_PREFIX);
   app.useGlobalFilters(new AppErrorFilter());
   const fastify = (app as NestFastifyApplication).getHttpAdapter().getInstance();
   registerRequestId(fastify);
+  registerClientIp(fastify, env.BFF_SHARED_SECRET);
   registerSecurityHeaders(fastify, {
     hsts: env.APP_ENV === 'staging' || env.APP_ENV === 'production',
   });
