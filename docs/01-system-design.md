@@ -83,29 +83,24 @@ infra/                    local docker-compose
 
 ## 3. Roles and data access
 
-Seeded in migration `0003`. Roles can be scoped to one city (`user_role.city_id`).
+Replaced in milestone 2 (migration `0011`) by eight staff roles with granular permissions. No role
+holds every permission.
 
-| Role                   | Typical permissions                                                                               |
-| ---------------------- | ------------------------------------------------------------------------------------------------- |
-| `CUSTOMER`, `WORKER`   | Their own data only (enforced in services).                                                       |
-| `SUPER_ADMIN`          | Users, roles, configuration, audit log.                                                           |
-| `FOUNDER`              | Reporting, catalog/pricing/areas, approvals.                                                      |
-| `CITY_MANAGER`         | Live operations for a city: bookings, assignment, overrides, refunds approval, worker management. |
-| `OPERATIONS_AGENT`     | Manual bookings, dispatch, shifts, cancellations.                                                 |
-| `SUPPORT_AGENT`        | Support cases, refund requests, masked customer view.                                             |
-| `VERIFICATION_OFFICER` | Worker documents and verification decisions.                                                      |
-| `SAFETY_OFFICER`       | Safety incidents, worker restrictions.                                                            |
-| `FINANCE`              | Payments, refunds, invoices, payouts, worker bank details.                                        |
-| `MARKETING`            | Promotions.                                                                                       |
+The roles are `SUPER_ADMIN`, `OPERATIONS_HEAD`, `DISPATCHER`, `CUSTOMER_SUPPORT`,
+`WORKER_OPERATIONS`, `FINANCE`, `SAFETY` and `AUDITOR`. Each can be limited to one city.
 
-**Masking.** Permissions marked `is_sensitive` (e.g. `customer.read_contact`,
-`worker_verification.read`, `safety.read`) unlock full phone numbers, addresses, documents and
-incident narratives. Without them the API returns masked values (`+91 98xxx xx012`). Access to
-sensitive records is written to `audit_log` with action `READ`.
+See [04-api-and-security.md §4–5](04-api-and-security.md#4-roles-and-permissions) for:
 
-**Separation of duties enforced by the database:** nobody approves their own refund, payout,
-worker bank change, verification or worker restriction lift; serious safety incidents are closed
-by someone other than the incident commander.
+- the role matrix;
+- masking;
+- audited PII reveal;
+- step-up MFA for sensitive actions.
+
+**Separation of duties enforced by the database:**
+
+- Nobody approves their own refund, payout, worker bank change, verification or restriction
+  lift.
+- Serious safety incidents are closed by someone other than the incident commander.
 
 ---
 
@@ -199,6 +194,13 @@ Two transactions reserving the same worker for overlapping time cannot both comm
 makes the second wait and then fail with `23P01`. The booking engine treats that as "this worker
 was just taken" and tries the next candidate inside a savepoint.
 
+When both inserts are checking each other's uncommitted row at the same instant, PostgreSQL
+may instead abort one as a deadlock (`40P01`). `inTransaction` retries deadlocks and
+serialization failures (up to 4 attempts, with jitter). The retry sees the winner's committed
+reservation and moves on to the next worker, or reports `NO_AVAILABILITY`, so the customer never
+gets a server error. This case was seen once in CI; a deterministic deadlock test now covers the
+retry.
+
 **Verified:** during development the constraint was temporarily removed and the concurrency
 tests in `test/concurrency.test.ts` were re-run: 3 of 10 racing customers then got the same
 single worker. With the constraint, exactly one succeeds. The application's own availability
@@ -206,7 +208,8 @@ check is therefore not enough on its own — the constraint is what protects cus
 
 The `worker_reservation_before_insert` trigger additionally refuses a reservation unless:
 
-- the worker is `APPROVED`, active, permitted for the service (and zone), not restricted;
+- the worker's status is `ACTIVE` (or `RESTRICTED` without a restriction on this service), and
+  the worker is permitted for the service and zone;
 - every verification the service requires is `VERIFIED` in its latest attempt and still valid
   when the job ends; every required training module is passed;
 - a planned shift in the booking's zone covers the whole period;
@@ -277,34 +280,42 @@ start a job without a code only with a written reason, which is stored in the hi
 
 ## 8. API conventions (for Android, iOS and web alike)
 
-- Base path `/v1`. Breaking changes go to `/v2`; old app versions keep working.
-- JSON only. Money: integer paise plus currency. Time: ISO-8601 UTC.
-- Errors: `{ "error": { "code": "NO_AVAILABILITY", "message": "…", "details": {} } }`. Apps switch
-  on `code`; `message` is for logs/fallback.
-- Every booking-creating request carries an idempotency key, so a retry on a flaky mobile network
-  never creates two bookings.
-- Every mutating request runs in one transaction with an action context (actor, role, source,
-  request id) that the database writes into history and audit rows.
-- Authentication (next milestone): phone OTP for customers and workers; password + TOTP for staff;
-  short-lived access tokens with rotating refresh tokens stored hashed per device.
+- **Paths.** Base path `/api/v1`. Breaking changes go to `/api/v2`, and old app versions keep
+  working.
+- **Data format.** JSON only. Money is integer paise plus a currency. Times are ISO-8601 UTC.
+- **Errors.** `{ "error": { "code": "NO_AVAILABILITY", "message": "…", "details": {}, "requestId": "…" } }`.
+  Apps switch on `code`; `message` is for logs and as a fallback.
+- **Idempotency.** Every creating request from the apps carries an `Idempotency-Key`, so a retry
+  on a flaky mobile network never creates two bookings, payments or cases.
+- **Transactions.** Every mutating request runs in one transaction with an action context (actor,
+  role, source, request id, reason). The database writes that context into history and audit
+  rows.
+- **Business rules live in the API.** Apps show what the API returns; they never decide
+  availability, prices, eligibility or status changes.
+
+The full endpoint list, the authentication design and the integrations are in
+[04-api-and-security.md](04-api-and-security.md).
 
 ---
 
 ## 9. What is built vs next
 
-| Area                                                                          | Status                                     |
-| ----------------------------------------------------------------------------- | ------------------------------------------ |
-| Monorepo, CI, lint, typecheck, formatting                                     | Done                                       |
-| Database schema for every area in the V1 list (auth → safety)                 | Done (migrations 0001–0010)                |
-| Booking state machine (domain + database)                                     | Done, tested                               |
-| Concurrency protection, eligibility, shift checks                             | Done, tested (incl. mutation check)        |
-| Booking creation (serviceability, pricing, promo, capacity hold, idempotency) | Done, tested                               |
-| Dispatch: confirm, offer, accept, reject, expiry, re-offer                    | Done, tested                               |
-| Lifecycle: cancel, reschedule, expire unpaid, field events, start code, close | Done, tested                               |
-| Auth endpoints (OTP, staff login + MFA), RBAC guards, masking                 | **Next**                                   |
-| REST controllers for customer, worker and admin                               | **Next**                                   |
-| Payment gateway integration (order, webhook verify + dedup, refunds)          | **Next** (tables and guards ready)         |
-| Scheduler for sweepers (unpaid expiry, offer expiry, notifications)           | **Next** (service methods ready)           |
-| Notifications (push/SMS/WhatsApp/email templates in en/hi)                    | Tables ready                               |
-| Support cases, safety incidents, payouts, invoices                            | Tables and guards ready; services to build |
-| Customer app, worker app, admin panel                                         | After the API endpoints are stable         |
+| Area                                                                           | Status                                                                         |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| Monorepo, CI (6 required-able jobs), lint, typecheck, formatting               | Done                                                                           |
+| Database schema, migrations 0001–0013                                          | Done                                                                           |
+| Booking state machine (domain + database)                                      | Done, tested                                                                   |
+| Concurrency protection, eligibility, shift checks, deadlock retry              | Done, tested (incl. mutation checks)                                           |
+| Booking creation, dispatch, lifecycle, start code                              | Done, tested                                                                   |
+| Customer/worker OTP auth, staff password + TOTP, sessions, RBAC, PII masking   | Done, tested                                                                   |
+| Worker lifecycle (REGISTERED → ACTIVE, suspension, restriction)                | Done, tested                                                                   |
+| Customer, worker and admin APIs under `/api/v1`                                | Done; acceptance and failure journeys pass over HTTP                           |
+| Payments: provider abstraction, Razorpay adapter, signed sandbox, webhooks     | Done with the sandbox; Razorpay adapter not yet run against Razorpay test mode |
+| Refunds, cancellation policy, invoices, worker earnings                        | Done, tested                                                                   |
+| Background worker (expiry, offers, re-dispatch, notifications, reconciliation) | Done, tested                                                                   |
+| Notifications outbox and en/hi templates                                       | Done; senders are log-only until provider accounts exist                       |
+| OTP via MSG91                                                                  | Adapter written; not yet run against an MSG91 account                          |
+| Document storage for production (S3-compatible)                                | **Next**; production start is refused until it exists                          |
+| Admin APIs to edit catalog, areas, prices, payout rules                        | **Next** (configured by SQL/seed for now)                                      |
+| Cash payment recording                                                         | **Next**                                                                       |
+| Customer app, worker app, admin panel                                          | **Next milestone**                                                             |

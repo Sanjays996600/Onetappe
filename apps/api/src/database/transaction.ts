@@ -1,11 +1,28 @@
 import { sql, type Kysely, type Transaction } from 'kysely';
 import type { ActionContext } from './action-context.js';
 import type { DB } from './db.generated.js';
-import { translateDatabaseError } from './database-errors.js';
+import { PG, isPgError, translateDatabaseError } from './database-errors.js';
 
 export type Tx = Transaction<DB>;
 /** Anything that can run queries: the pool or an open transaction. */
 export type Queryable = Kysely<DB>;
+
+/**
+ * Transactions PostgreSQL aborted to resolve a deadlock or serialization conflict are
+ * retried: nothing was written, and a fresh attempt sees the winner's committed rows (so
+ * a lost reservation race then fails cleanly on the exclusion constraint). Work passed to
+ * `inTransaction` must therefore only touch the database; external calls happen outside.
+ */
+export const TRANSACTION_RETRY = { maxAttempts: 4, baseDelayMs: 10 } as const;
+
+const RETRYABLE_CODES: ReadonlySet<string> = new Set([
+  PG.DEADLOCK_DETECTED,
+  PG.SERIALIZATION_FAILURE,
+]);
+
+function isRetryable(error: unknown): boolean {
+  return isPgError(error) && RETRYABLE_CODES.has(error.code);
+}
 
 /**
  * Runs `work` in one database transaction with the action context installed as
@@ -17,9 +34,26 @@ export async function inTransaction<T>(
   context: ActionContext,
   work: (tx: Tx) => Promise<T>,
 ): Promise<T> {
-  try {
-    return await db.transaction().execute(async (tx) => {
-      await sql`
+  for (let attemptNo = 1; ; attemptNo += 1) {
+    try {
+      return await runTransaction(db, context, work);
+    } catch (error) {
+      if (!isRetryable(error) || attemptNo >= TRANSACTION_RETRY.maxAttempts) {
+        throw translateDatabaseError(error);
+      }
+      const delay = TRANSACTION_RETRY.baseDelayMs * 2 ** (attemptNo - 1);
+      await new Promise((resolve) => setTimeout(resolve, delay + Math.random() * delay));
+    }
+  }
+}
+
+function runTransaction<T>(
+  db: Kysely<DB>,
+  context: ActionContext,
+  work: (tx: Tx) => Promise<T>,
+): Promise<T> {
+  return db.transaction().execute(async (tx) => {
+    await sql`
         SELECT set_config('app.actor_user_id', ${context.actorUserId ?? ''}, true),
                set_config('app.actor_role', ${context.actorRole ?? ''}, true),
                set_config('app.source', ${context.source}, true),
@@ -27,11 +61,8 @@ export async function inTransaction<T>(
                set_config('app.event', '', true),
                set_config('app.reason', ${context.reason?.trim() ?? ''}, true)
       `.execute(tx);
-      return work(tx);
-    });
-  } catch (error) {
-    throw translateDatabaseError(error);
-  }
+    return work(tx);
+  });
 }
 
 /**

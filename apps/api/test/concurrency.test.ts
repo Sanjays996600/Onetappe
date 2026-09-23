@@ -145,7 +145,7 @@ describe('double-booking protection', () => {
     ).rejects.toMatchObject({ code: 'RESERVATION_NOT_ALLOWED' });
   });
 
-  it('two raw connections inserting overlapping reservations at once: one wins, one gets 23P01', async () => {
+  it('two raw connections inserting overlapping reservations at once: exactly one wins', async () => {
     const world = await createWorld(app.db, { workers: 1 });
     const [a, b] = await Promise.all([world.customer(), world.customer()]);
     const first = await app.creation.create(
@@ -195,10 +195,15 @@ describe('double-booking protection', () => {
       const failures = race.filter((r) => r.status === 'rejected');
       expect(race.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
       expect(failures).toHaveLength(1);
-      expect((failures[0] as PromiseRejectedResult).reason).toMatchObject({
-        code: '23P01',
-        constraint: 'worker_reservation_no_overlap',
-      });
+      // PostgreSQL reports the loser as an exclusion violation, or (when both inserts are
+      // checking each other's uncommitted row) aborts it as a deadlock. Either way nothing
+      // overlapping is committed; the application retries deadlocks (see inTransaction).
+      const reason = (failures[0] as PromiseRejectedResult).reason as {
+        code: string;
+        constraint?: string;
+      };
+      expect(['23P01', '40P01']).toContain(reason.code);
+      if (reason.code === '23P01') expect(reason.constraint).toBe('worker_reservation_no_overlap');
     } finally {
       await Promise.all(clients.map((c) => c.end()));
     }
@@ -230,5 +235,38 @@ describe('double-booking protection', () => {
       .where('booking_id', '=', abandoned.id)
       .executeTakeFirstOrThrow();
     expect(old).toEqual({ status: 'RELEASED', release_reason: 'HOLD_EXPIRED' });
+  });
+});
+
+describe('transaction retry', () => {
+  it('a transaction aborted by a deadlock is retried and both sides complete', async () => {
+    const [lockA, lockB] = [Math.floor(Math.random() * 1e9), Math.floor(Math.random() * 1e9) + 1];
+    const runs = { first: 0, second: 0 };
+    let arrived = 0;
+    let releaseBarrier!: () => void;
+    const barrier = new Promise<void>((resolve) => (releaseBarrier = resolve));
+
+    // Each transaction takes one lock, waits until the other holds its lock, then asks for
+    // the other's: a guaranteed deadlock on the first attempt, none on the retry.
+    const contender = (name: keyof typeof runs, mine: number, theirs: number) =>
+      inTransaction(app.db, SYSTEM, async (tx) => {
+        runs[name] += 1;
+        await sql`SELECT pg_advisory_xact_lock(${mine})`.execute(tx);
+        if (runs[name] === 1) {
+          arrived += 1;
+          if (arrived === 2) releaseBarrier();
+          await barrier;
+        }
+        await sql`SELECT pg_advisory_xact_lock(${theirs})`.execute(tx);
+        return name;
+      });
+
+    const results = await Promise.all([
+      contender('first', lockA, lockB),
+      contender('second', lockB, lockA),
+    ]);
+    expect(results).toEqual(['first', 'second']);
+    // Exactly one side was chosen as the deadlock victim and ran again.
+    expect(runs.first + runs.second).toBe(3);
   });
 });

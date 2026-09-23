@@ -13,22 +13,31 @@
 | Launch city     | Noida — configured as data, not in code.                                                                 |
 | Pricing         | Rule-based (service, zone, duration, time, tax, discount, promo, extra charges); worker payout separate. |
 | Accounts        | All production accounts company-owned; developers get role-based access.                                 |
+| Authentication  | Customers and workers: phone + OTP, no passwords. Staff: email + password + authenticator app (MFA).     |
+| Staff roles     | Eight roles with granular permissions; no universal admin; PII masked unless revealed (audited).         |
+| Payments        | Razorpay first, behind a provider interface; paid only on server-verified gateway events.                |
+| OTP delivery    | Behind a provider interface; MSG91 adapter first. Test OTP only in automated tests.                      |
 
 ## Still needed from One Tappe
 
-| #   | Item                                                                                             | Needed for                        |
-| --- | ------------------------------------------------------------------------------------------------ | --------------------------------- |
-| 1   | Noida launch zones: localities, pincodes, zone centre points and service radius                  | Service-area configuration        |
-| 2   | HH60 price, GST treatment (confirmed by CA), any instant/evening charges, launch promo codes     | Pricing rules                     |
-| 3   | HH60 task list (and what is excluded), in English and Hindi                                      | Catalog, app copy                 |
-| 4   | Worker payout for HH60 (job pay, travel allowance)                                               | Payout rules                      |
-| 5   | Which worker verifications and training are mandatory for HH60                                   | Eligibility rules                 |
-| 6   | Payment policy: prepaid only in the app? cancellation / refund rules and timings                 | Payment and refund flows          |
-| 7   | Legal entity name, GSTIN, invoice series format                                                  | Invoices                          |
-| 8   | Providers chosen for: payment gateway, SMS/OTP, WhatsApp Business, maps, push, email, monitoring | Integrations (sandbox keys first) |
-| 9   | Customer terms, privacy notice, worker terms (final text from counsel)                           | Consent screens                   |
-| 10  | Brand assets: logo, colours, fonts                                                               | Design tokens                     |
-| 11  | Staff list with roles (and city scope) for the first admin accounts                              | Seeding users                     |
+| #   | Item                                                                                                                                          | Needed for                             |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| 1   | Noida launch zones: localities, pincodes, zone centre points and service radius                                                               | Service-area configuration             |
+| 2   | HH60 price, GST treatment (confirmed by CA), any instant/evening charges, launch promo codes                                                  | Pricing rules                          |
+| 3   | HH60 task list (and what is excluded), in English and Hindi                                                                                   | Catalog, app copy                      |
+| 4   | Worker payout for HH60 (job pay, travel allowance)                                                                                            | Payout rules                           |
+| 5   | Which worker verifications and training are mandatory for HH60                                                                                | Eligibility rules                      |
+| 6   | Payment policy: prepaid only in the app? cancellation / refund rules and timings                                                              | Payment and refund flows               |
+| 7   | Legal entity name, GSTIN, invoice series format                                                                                               | Invoices                               |
+| 8   | Providers still to choose: WhatsApp Business, maps, push, email, monitoring (Razorpay and MSG91 are the current choices for payments and OTP) | Integrations (sandbox keys first)      |
+| 9   | Customer terms, privacy notice, worker terms (final text from counsel)                                                                        | Consent screens                        |
+| 10  | Brand assets: logo, colours, fonts                                                                                                            | Design tokens                          |
+| 11  | Staff list with roles (and city scope) for the first admin accounts                                                                           | Seeding users                          |
+| 12  | Company Razorpay account: test-mode keys for staging, webhook secret, automatic capture turned on                                             | Running payments against Razorpay      |
+| 13  | Company MSG91 account: auth key, DLT-registered sender id and OTP template (en/hi)                                                            | Real OTP SMS in staging                |
+| 14  | Company cloud storage bucket (S3-compatible, encrypted, private) for worker documents                                                         | Production start                       |
+| 15  | GitHub branch protection on `main` with the six CI jobs required (repository admin setting)                                                   | Merge safety                           |
+| 16  | Cancellation and refund rules (who pays what, when)                                                                                           | Replacing the default full-refund rule |
 
 ## Design questions to confirm
 
