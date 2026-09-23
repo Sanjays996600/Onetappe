@@ -13,6 +13,8 @@ import { SystemStatusService } from './system-status.service.js';
 import { IntegrationsModule } from '../integrations/integrations.module.js';
 import { JobsModule } from '../jobs/jobs.module.js';
 
+import { StaffAdminController } from './staff-admin.controller.js';
+import { StaffAdminService } from './staff-admin.service.js';
 @Module({
   imports: [
     BookingModule,
@@ -22,7 +24,18 @@ import { JobsModule } from '../jobs/jobs.module.js';
     JobsModule,
     IntegrationsModule,
   ],
-  controllers: [AdminBookingController, AdminPeopleController, AdminOperationsController],
-  providers: [AdminBookingService, AdminPeopleService, BookingTraceService, SystemStatusService],
+  controllers: [
+    AdminBookingController,
+    AdminPeopleController,
+    AdminOperationsController,
+    StaffAdminController,
+  ],
+  providers: [
+    AdminBookingService,
+    AdminPeopleService,
+    BookingTraceService,
+    StaffAdminService,
+    SystemStatusService,
+  ],
 })
 export class AdminModule {}

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'kysely';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ApiClient } from './support/http.js';
 import {
   NOIDA_SECTOR_62,
@@ -266,6 +266,53 @@ describe('phones losing signal', () => {
     expect((await deliverWebhook(api, lostWebhook)).status).toBeLessThan(300);
     const confirmations = (await history(bookingId)).filter((h) => h.to_status === 'CONFIRMED');
     expect(confirmations).toHaveLength(1);
+  });
+});
+
+describe('Razorpay unreachable', () => {
+  it('checkout fails cleanly, nothing is marked paid, and a later attempt succeeds', async () => {
+    const { world } = await noida(1);
+    const { client, addressId } = await customerWithAddress(world);
+    const booking = await book(client, world, addressId);
+    const bookingId = booking.body['id'] as string;
+
+    const gateway = sandbox(app);
+    const down = vi
+      .spyOn(gateway, 'createOrder')
+      .mockRejectedValueOnce(new Error('connect ETIMEDOUT api.razorpay.com'));
+    const failed = await client.post<ErrorBody>(`/customer/bookings/${bookingId}/payments`);
+    expect(failed.status).toBe(422);
+    expect(failed.body.error.code).toBe('PAYMENT_GATEWAY_UNAVAILABLE');
+    expect((await client.get<Json>(`/customer/bookings/${bookingId}`)).body['status']).toBe(
+      'PENDING_PAYMENT',
+    );
+    down.mockRestore();
+
+    const pay = await client.post<Json>(`/customer/bookings/${bookingId}/payments`);
+    expect(pay.status).toBe(201);
+    const orderId = (pay.body['checkout'] as Json)['orderId'] as string;
+    const captured = gateway.capture(orderId);
+
+    // The gateway is unreachable again when the app asks: the booking is not confirmed on
+    // the app's word; the webhook (or the reconciliation job) confirms it later.
+    const fetchDown = vi
+      .spyOn(gateway, 'fetchOrderStatus')
+      .mockRejectedValue(new Error('connect ETIMEDOUT api.razorpay.com'));
+    const refresh = await client.post<ErrorBody>(
+      `/customer/bookings/${bookingId}/payments/${pay.body['paymentId'] as string}/refresh`,
+    );
+    expect(refresh.status).toBe(503);
+    expect(refresh.body.error.code).toBe('PAYMENT_GATEWAY_UNAVAILABLE');
+    expect(refresh.headers['retry-after']).toBe('10');
+    expect((await client.get<Json>(`/customer/bookings/${bookingId}`)).body['status']).toBe(
+      'PENDING_PAYMENT',
+    );
+    fetchDown.mockRestore();
+
+    await deliverWebhook(api, captured);
+    expect((await client.get<Json>(`/customer/bookings/${bookingId}`)).body['status']).toBe(
+      'CONFIRMED',
+    );
   });
 });
 

@@ -11,7 +11,8 @@
     "db:migrate": "tsx src/database/migrate.cli.ts",
     "db:codegen": "kysely-codegen --dialect postgres --out-file src/database/db.generated.ts --exclude-pattern schema_migration --date-parser string --type-mapping '{\"int8\":\"number\"}'",
     "db:codegen:verify": "kysely-codegen --dialect postgres --out-file src/database/db.generated.ts --exclude-pattern schema_migration --date-parser string --type-mapping '{\"int8\":\"number\"}' --verify",
-    "start:worker": "node dist/worker.js"
+    "start:worker": "node dist/worker.js",
+    "staff:bootstrap": "tsx src/staff-bootstrap.cli.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1138.0",

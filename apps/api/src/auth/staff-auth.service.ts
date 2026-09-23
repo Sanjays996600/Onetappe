@@ -6,6 +6,7 @@ import {
   ForbiddenError,
   RateLimitedError,
   UnauthorizedError,
+  ValidationError,
   type AppError,
 } from '../common/errors.js';
 import { ENV } from '../config/config.module.js';
@@ -17,6 +18,7 @@ import { inTransaction } from '../database/transaction.js';
 import {
   DataCipher,
   hashPassword,
+  passwordProblems,
   randomToken,
   sha256Hex,
   verifyPassword,
@@ -301,6 +303,63 @@ export class StaffAuthService {
       return true;
     });
     if (!ok) throw new UnauthorizedError('MFA_INVALID', 'The code is incorrect');
+  }
+
+  /**
+   * The invited person chooses their password. The invitation is single-use and expires;
+   * any existing sessions end (this is also the password reset). The authenticator is
+   * enrolled at the next sign-in if it is not already.
+   */
+  async acceptInvitation(token: string, password: string, meta: SessionMeta): Promise<void> {
+    const problems = passwordProblems(password);
+    if (problems.length > 0) {
+      throw new ValidationError('PASSWORD_WEAK', `Choose a password with ${problems.join(', ')}`);
+    }
+    const hash = await hashPassword(password);
+    const accepted = await inTransaction(this.db, this.context(null, meta), async (tx) => {
+      const invitation = await tx
+        .selectFrom('staff_invitation as i')
+        .innerJoin('app_user as u', 'u.id', 'i.user_id')
+        .select(['i.id', 'i.user_id', 'u.status'])
+        .where('i.token_hash', '=', sha256Hex(token))
+        .where('i.accepted_at', 'is', null)
+        .where('i.revoked_at', 'is', null)
+        .where('i.expires_at', '>', sql<Date>`now()`)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!invitation || invitation.status !== 'ACTIVE') return false;
+      await sql`SELECT set_config('app.actor_user_id', ${invitation.user_id}, true)`.execute(tx);
+      await tx
+        .insertInto('staff_credential')
+        .values({ user_id: invitation.user_id, password_hash: hash })
+        .onConflict((oc) =>
+          oc.column('user_id').doUpdateSet({
+            password_hash: hash,
+            password_changed_at: new Date(),
+            failed_attempts: 0,
+            locked_until: null,
+          }),
+        )
+        .execute();
+      await tx
+        .updateTable('staff_invitation')
+        .set({ accepted_at: sql<Date>`now()` })
+        .where('id', '=', invitation.id)
+        .execute();
+      await tx
+        .updateTable('auth_session')
+        .set({ revoked_at: new Date(), revoke_reason: 'PASSWORD_SET' })
+        .where('user_id', '=', invitation.user_id)
+        .where('revoked_at', 'is', null)
+        .execute();
+      return true;
+    });
+    if (!accepted) {
+      throw new UnauthorizedError(
+        'INVITATION_INVALID',
+        'This invitation link is invalid or has expired; ask an administrator for a new one',
+      );
+    }
   }
 
   /** Sets a staff password (used when creating staff accounts). */

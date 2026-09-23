@@ -839,6 +839,17 @@ export interface StaffCredential {
   user_id: string;
 }
 
+export interface StaffInvitation {
+  accepted_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  expires_at: Timestamp;
+  id: Generated<string>;
+  revoked_at: Timestamp | null;
+  token_hash: string;
+  user_id: string;
+}
+
 export interface StaffLoginChallenge {
   attempts: Generated<number>;
   consumed_at: Timestamp | null;
@@ -1224,6 +1235,7 @@ export interface DB {
   service_zone: ServiceZone;
   serviceable_locality: ServiceableLocality;
   staff_credential: StaffCredential;
+  staff_invitation: StaffInvitation;
   staff_login_challenge: StaffLoginChallenge;
   stored_document: StoredDocument;
   support_case: SupportCase;

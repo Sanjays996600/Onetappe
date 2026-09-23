@@ -30,6 +30,10 @@ const StaffMfaBody = z.object({
   code: z.string().regex(/^\d{6}$/),
 });
 const StepUpBody = z.object({ code: z.string().regex(/^\d{6}$/) });
+const InvitationBody = z.object({
+  token: z.string().min(20).max(200),
+  password: z.string().min(1).max(200),
+});
 
 function tokensView(tokens: IssuedTokens) {
   return {
@@ -167,6 +171,17 @@ export class SessionController {
     @RequestMeta() meta: Meta,
   ) {
     return tokensView(await this.staffAuth.completeMfa(body.challengeToken, body.code, meta));
+  }
+
+  /** The invited staff member sets their password (then signs in and enrols MFA). */
+  @Post('staff/invitation/accept')
+  @Public()
+  @HttpCode(204)
+  async acceptInvitation(
+    @Body(new ZodPipe(InvitationBody)) body: z.infer<typeof InvitationBody>,
+    @RequestMeta() meta: Meta,
+  ): Promise<void> {
+    await this.staffAuth.acceptInvitation(body.token, body.password, meta);
   }
 
   @Post('staff/step-up')

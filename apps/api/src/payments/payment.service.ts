@@ -6,9 +6,11 @@ import { BookingTransitionService } from '../booking/booking-transition.service.
 import { DispatchService } from '../booking/dispatch.service.js';
 import { Clock } from '../common/clock.js';
 import {
+  AppError,
   BusinessRuleError,
   ForbiddenError,
   NotFoundError,
+  ServiceUnavailableError,
   UnauthorizedError,
   ValidationError,
 } from '../common/errors.js';
@@ -235,7 +237,21 @@ export class PaymentService {
       throw new ForbiddenError('NOT_YOUR_BOOKING', 'This booking belongs to another customer');
     }
     if (['CREATED', 'AUTHORIZED'].includes(payment.status) && payment.provider_order_id) {
-      await this.reconcileOrder(payment.provider_order_id, context.requestId);
+      try {
+        await this.reconcileOrder(payment.provider_order_id, context.requestId);
+      } catch (error) {
+        if (error instanceof AppError) throw error;
+        // The gateway could not be asked. Nothing changed; the app may ask again, and the
+        // webhook or the reconciliation job confirms the payment in the meantime.
+        this.logger.warn(
+          `Gateway status check failed for payment ${paymentId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        throw new ServiceUnavailableError(
+          'PAYMENT_GATEWAY_UNAVAILABLE',
+          'We could not reach the payment gateway. Your payment is safe; please check again shortly.',
+          10,
+        );
+      }
     }
     const after = await this.db
       .selectFrom('payment')
