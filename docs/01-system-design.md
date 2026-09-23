@@ -300,22 +300,7 @@ The full endpoint list, the authentication design and the integrations are in
 
 ## 9. What is built vs next
 
-| Area                                                                           | Status                                                                         |
-| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| Monorepo, CI (6 required-able jobs), lint, typecheck, formatting               | Done                                                                           |
-| Database schema, migrations 0001–0013                                          | Done                                                                           |
-| Booking state machine (domain + database)                                      | Done, tested                                                                   |
-| Concurrency protection, eligibility, shift checks, deadlock retry              | Done, tested (incl. mutation checks)                                           |
-| Booking creation, dispatch, lifecycle, start code                              | Done, tested                                                                   |
-| Customer/worker OTP auth, staff password + TOTP, sessions, RBAC, PII masking   | Done, tested                                                                   |
-| Worker lifecycle (REGISTERED → ACTIVE, suspension, restriction)                | Done, tested                                                                   |
-| Customer, worker and admin APIs under `/api/v1`                                | Done; acceptance and failure journeys pass over HTTP                           |
-| Payments: provider abstraction, Razorpay adapter, signed sandbox, webhooks     | Done with the sandbox; Razorpay adapter not yet run against Razorpay test mode |
-| Refunds, cancellation policy, invoices, worker earnings                        | Done, tested                                                                   |
-| Background worker (expiry, offers, re-dispatch, notifications, reconciliation) | Done, tested                                                                   |
-| Notifications outbox and en/hi templates                                       | Done; senders are log-only until provider accounts exist                       |
-| OTP via MSG91                                                                  | Adapter written; not yet run against an MSG91 account                          |
-| Document storage for production (S3-compatible)                                | **Next**; production start is refused until it exists                          |
-| Admin APIs to edit catalog, areas, prices, payout rules                        | **Next** (configured by SQL/seed for now)                                      |
-| Cash payment recording                                                         | **Next**                                                                       |
-| Customer app, worker app, admin panel                                          | **Next milestone**                                                             |
+The verified status of every component, and what must happen before the UI and before
+production, is in [10-system-matrix.md](10-system-matrix.md). The full component diagram,
+the source of truth for each kind of data, and the integration boundaries are in
+[05-architecture.md](05-architecture.md). The diagram in §2 above is the short version.

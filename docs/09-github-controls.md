@@ -96,14 +96,14 @@ credential available only to that step.
 
 ## 6. What each check proves
 
-| Check                         | Proves                                                                                                                          |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `format`, `lint`, `typecheck` | Code style, strict type-checked lint rules, TypeScript types, production build                                                  |
-| `domain-tests`                | State machine, pricing and capacity rules                                                                                       |
-| `migration-guard`             | No existing migration was edited, renamed or removed; new ones are numbered after the last                                      |
-| `migrations`                  | All migrations apply to an empty database, re-running applies nothing, generated DB types are current                           |
-| `integration-tests`           | 22 test files (241 tests) over HTTP against PostgreSQL 16, run as the least-privilege role, with real ClamAV and an S3 emulator |
-| `secret-scan`                 | No secrets in the full git history (gitleaks)                                                                                   |
-| `dependency-audit`            | No known high or critical vulnerabilities in dependencies                                                                       |
-| `dependency-review`           | A pull request adds no vulnerable dependency                                                                                    |
-| `codeql`                      | Static security analysis (security-extended queries)                                                                            |
+| Check                         | Proves                                                                                                                     |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `format`, `lint`, `typecheck` | Code style, strict type-checked lint rules, TypeScript types, production build                                             |
+| `domain-tests`                | State machine, pricing and capacity rules                                                                                  |
+| `migration-guard`             | No existing migration was edited, renamed or removed; new ones are numbered after the last                                 |
+| `migrations`                  | All migrations apply to an empty database, re-running applies nothing, generated DB types are current                      |
+| `integration-tests`           | Every API test file, over HTTP against PostgreSQL 16, run as the least-privilege role, with real ClamAV and an S3 emulator |
+| `secret-scan`                 | No secrets in the full git history (gitleaks)                                                                              |
+| `dependency-audit`            | No known high or critical vulnerabilities in dependencies                                                                  |
+| `dependency-review`           | A pull request adds no vulnerable dependency                                                                               |
+| `codeql`                      | Static security analysis (security-extended queries)                                                                       |

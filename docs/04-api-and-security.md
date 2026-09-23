@@ -120,8 +120,24 @@ settings changes need a recent MFA check.
 Base path `/api/v1`. The API sends JSON, money in integer paise and times as ISO-8601 UTC.
 Errors look like `{ "error": { "code", "message", "details", "requestId" } }`.
 
-Customer and worker requests that create something need an `Idempotency-Key` header. A retry
-returns the first result with `replayed: true`.
+Retries are safe:
+
+- **`Idempotency-Key` header required** on the create endpoints:
+  - customer bookings, addresses, support cases and SOS;
+  - worker support cases and SOS;
+  - staff safety incidents.
+    The key is stored with a hash of the request. A retry with the same key and body returns
+    the original, and bookings and support cases mark it `replayed: true`. The same key with
+    a different body is refused (`IDEMPOTENCY_KEY_REUSED`).
+- **Idempotent by design** (no key needed):
+  - starting a payment reuses the open gateway order;
+  - a rating is unique per booking;
+  - device registration upserts;
+  - consent acceptance is unique per document version;
+  - a worker repeating the job step they just did gets success without a repeat;
+  - gateway and Zoho webhooks are stored once per event.
+- **Staff booking actions** carry `expectedVersion` (the `version` from
+  `GET /admin/bookings/:id`). A booking changed meanwhile answers 409 `STALE_BOOKING`.
 
 **Customer** (`/customer`, customer token):
 
@@ -159,6 +175,15 @@ returns the first result with `replayed: true`.
 Every admin change needs a written reason. The database records the actor, role, source,
 request id, time, previous and new state for every change, and those records cannot be edited
 or deleted.
+
+**Staff and legal** (added after the first API milestone):
+
+| Area              | Endpoints                                                                                                                                                                                                                                                                                            |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Staff accounts    | `GET/POST /admin/staff`, `POST /admin/staff/:id/roles`, `…/roles/revoke`, `…/status`, `…/reset-mfa`, `…/invitation`; `POST /auth/staff/invitation/accept`                                                                                                                                            |
+| Configuration     | `/admin/config/*`: cities, zones, pincodes, localities, serviceability check, operating hours, categories, services, options, tasks, prices, taxes, charges, payouts, cancellation rules, pricing preview, promotions, notification templates and routes, legal documents; `GET/PUT /admin/settings` |
+| Integrations      | `GET /admin/integrations`, `…/events`, `…/events/:id/retry`, `…/events/:id/discard`, `…/:target/resume`                                                                                                                                                                                              |
+| Legal and consent | `GET /legal/documents`, `GET /me/consents`, `POST /me/consents/accept`, `POST /me/consents/:purpose`                                                                                                                                                                                                 |
 
 ## 7. Payments
 
@@ -232,24 +257,15 @@ The environment rules in section 1 keep the last two out of production.
 
 ## 11. CI and merge rules
 
-GitHub Actions (`.github/workflows/ci.yml`) runs six jobs on every push and pull request:
+Two workflows run on every push and pull request:
 
-1. `format`: Prettier.
-2. `lint`: typescript-eslint, strict type-checked.
-3. `typecheck`: TypeScript, plus a production build.
-4. `domain-tests`: state machine, pricing and capacity unit tests.
-5. `migrations`: applies all migrations to an empty database, re-applies them (must apply 0) and
-   checks the generated database types are current.
-6. `integration-tests`: PostgreSQL 16 tests covering:
-   - the full HTTP acceptance journey
-   - the failure journeys
-   - concurrency
-   - database guarantees
-   - authentication
+- `CI`: `format`, `lint`, `typecheck` (+ build), `domain-tests`, `migration-guard`,
+  `migrations`, `integration-tests`.
+- `Security`: `secret-scan`, `dependency-audit`, `dependency-review` (pull requests),
+  `codeql`.
 
-**To require these before merge**, turn on branch protection for `main` in the GitHub repository
-settings (Settings → Branches), with required status checks set to the six jobs above. This is a
-repository setting and cannot be set from code.
+What each proves, and the exact branch protection settings, are in
+[09-github-controls.md](09-github-controls.md).
 
 ## 12. Tested journeys
 

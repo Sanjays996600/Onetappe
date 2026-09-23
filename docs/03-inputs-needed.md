@@ -36,8 +36,15 @@
 | 12  | Company Razorpay account: test-mode keys for staging, webhook secret, automatic capture turned on                                             | Running payments against Razorpay      |
 | 13  | Company MSG91 account: auth key, DLT-registered sender id and OTP template (en/hi)                                                            | Real OTP SMS in staging                |
 | 14  | Company cloud storage bucket (S3-compatible, encrypted, private) for worker documents                                                         | Production start                       |
-| 15  | GitHub branch protection on `main` with the six CI jobs required (repository admin setting)                                                   | Merge safety                           |
+| 15  | Create `main` and apply the GitHub ruleset and security settings in [09-github-controls.md](09-github-controls.md) (repository admin)         | Merge safety (before UI work)          |
 | 16  | Cancellation and refund rules (who pays what, when)                                                                                           | Replacing the default full-refund rule |
+| 17  | Maps provider for the apps' location screen (Google Maps Platform or Mappls)                                                                  | Customer app location step (before UI) |
+| 18  | Live worker location on the customer's tracking screen at launch, or status-based tracking only                                               | Tracking scope                         |
+| 19  | Named on-call people (and phone numbers) to be paged for SOS / critical safety incidents                                                      | Safety escalation                      |
+| 20  | How workers are paid: payout frequency, bank transfer method (manual batch / RazorpayX), who approves                                         | Worker payouts                         |
+| 21  | Company cloud account (AWS recommended, `ap-south-1`) for staging and production: database, S3, KMS, secrets, monitoring                      | Staging, provider verification         |
+| 22  | Worker document retention period after offboarding (counsel)                                                                                  | `documents.retention` setting          |
+| 23  | GST treatment and invoice series confirmed by the CA                                                                                          | Invoices                               |
 
 ## Design questions to confirm
 

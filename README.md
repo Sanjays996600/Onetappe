@@ -3,12 +3,18 @@
 Home-services booking platform: customer app, worker app and operations panel on one API.
 Launching in Noida with **HH60 House Help**; services, areas and prices are configuration.
 
-| Document                                                   | Contents                                                                   |
-| ---------------------------------------------------------- | -------------------------------------------------------------------------- |
-| [docs/01-system-design.md](docs/01-system-design.md)       | Decisions, architecture, data model, booking engine, guarantees, status    |
-| [docs/02-ui-ux-screen-map.md](docs/02-ui-ux-screen-map.md) | Customer app, worker app and admin panel screens with the APIs behind them |
-| [docs/03-inputs-needed.md](docs/03-inputs-needed.md)       | Decisions log and the information still needed                             |
-| [docs/04-api-and-security.md](docs/04-api-and-security.md) | Auth, roles, PII, full API list, payments, jobs, environments, CI          |
+| Document                                                                 | Contents                                                                                                 |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| [docs/01-system-design.md](docs/01-system-design.md)                     | Decisions, architecture, data model, booking engine, guarantees, status                                  |
+| [docs/02-ui-ux-screen-map.md](docs/02-ui-ux-screen-map.md)               | Customer app, worker app and admin panel screens with the APIs behind them                               |
+| [docs/03-inputs-needed.md](docs/03-inputs-needed.md)                     | Decisions log and the information still needed                                                           |
+| [docs/04-api-and-security.md](docs/04-api-and-security.md)               | Auth, roles, PII, full API list, payments, jobs, environments, CI                                        |
+| [docs/05-architecture.md](docs/05-architecture.md)                       | Component diagram, source of truth per data type, Zoho and Razorpay boundaries, tested failure behaviour |
+| [docs/06-security-review.md](docs/06-security-review.md)                 | Security review, open security items                                                                     |
+| [docs/07-operations-and-recovery.md](docs/07-operations-and-recovery.md) | Monitoring, alerts, backups, RPO/RTO, restore procedure                                                  |
+| [docs/08-provider-setup.md](docs/08-provider-setup.md)                   | Razorpay, MSG91, Zoho, FCM, email, S3, PostgreSQL setup and launch checks                                |
+| [docs/09-github-controls.md](docs/09-github-controls.md)                 | Exact GitHub ruleset and security settings                                                               |
+| [docs/10-system-matrix.md](docs/10-system-matrix.md)                     | Status of every component, and what must happen before UI and production                                 |
 
 ## Repository
 
@@ -51,7 +57,7 @@ which production refuses.
 | `APP_ENV`    | OTP                | Payments           | Data                             |
 | ------------ | ------------------ | ------------------ | -------------------------------- |
 | `local`      | printed to the log | sandbox            | developer database               |
-| `test`       | fixed test code    | sandbox            | wiped on every test run          |
+| `test`       | captured by tests  | sandbox            | wiped on every test run          |
 | `staging`    | MSG91              | Razorpay test keys | staging database, no real people |
 | `production` | MSG91              | Razorpay live keys | company-owned production account |
 
@@ -59,13 +65,19 @@ The API refuses to start with a combination that breaks these rules; see
 [docs/04-api-and-security.md §1](docs/04-api-and-security.md#1-environments). Secrets are never
 committed; staging and production values live in the company's secret manager.
 
-Checks run in CI on every push and pull request, as six separate jobs: `format`, `lint`,
-`typecheck` (+ build), `domain-tests`, `migrations` (apply, re-apply is a no-op, generated
-types current) and `integration-tests`. To block merging until they pass, enable branch
-protection on `main` with these six as required status checks (GitHub → Settings → Branches).
+Every push and pull request runs the `CI` workflow (`format`, `lint`, `typecheck` + build,
+`domain-tests`, `migration-guard`, `migrations`, `integration-tests`) and the `Security`
+workflow (`secret-scan`, `dependency-audit`, `dependency-review`, `codeql`). The branch
+protection that makes them required is a repository setting; see
+[docs/09-github-controls.md](docs/09-github-controls.md).
+
+The first staff account of a new environment is created once with
+`pnpm --filter @onetappe/api staff:bootstrap --email <email> --name "<name>"`; all later
+accounts are invited from the admin panel.
 
 ## Database changes
 
-1. Add `apps/api/migrations/NNNN_description.sql` (never edit an applied migration).
+1. Add `apps/api/migrations/NNNN_description.sql`. Never edit, rename or delete an existing
+   migration (CI's `migration-guard` refuses it).
 2. `pnpm db:migrate`
 3. `pnpm db:codegen` to regenerate `apps/api/src/database/db.generated.ts`, and commit it.
