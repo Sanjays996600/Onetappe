@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { availableBookingEvents, type BookingStatus } from '@onetappe/domain';
+import { DEFAULT_TIME_ZONE, availableBookingEvents, type BookingStatus } from '@onetappe/domain';
 import type { Kysely } from 'kysely';
 import { instantStart, validateScheduledStart } from '../booking/booking-schedule.js';
 import { VerificationCodeService } from '../booking/verification-code.service.js';
@@ -13,6 +13,7 @@ import { keyReusedError, type IdempotentRequest } from '../common/http/idempoten
 import { PricingService } from '../pricing/pricing.service.js';
 import { ServiceabilityService } from '../service-area/serviceability.service.js';
 import { IntegrationOutbox } from '../integrations/integration-outbox.service.js';
+import { formatVariables, renderTemplate } from '../notifications/render.js';
 
 export interface AddressInput {
   readonly label: string;
@@ -217,7 +218,15 @@ export class CustomerService {
         .where('user_id', '=', userId)
         .where('archived_at', 'is', null)
         .executeTakeFirst();
-      if (Number(result.numUpdatedRows) === 0) throw new NotFoundError('Address', addressId);
+      if (Number(result.numUpdatedRows) > 0) return;
+      // Already archived by this customer (a retried request) is fine; anything else is not theirs.
+      const own = await tx
+        .selectFrom('address')
+        .select('id')
+        .where('id', '=', addressId)
+        .where('user_id', '=', userId)
+        .executeTakeFirst();
+      if (!own) throw new NotFoundError('Address', addressId);
     });
   }
 
@@ -376,7 +385,7 @@ export class CustomerService {
         current: { start: b.scheduled_start.toISOString(), end: b.scheduled_end.toISOString() },
         rescheduleCount: b.reschedule_count,
       },
-      address: b.address_snapshot,
+      address: bookingAddressView(b.address_snapshot),
       price: {
         currency: b.currency,
         lines: lines.map((l) => ({
@@ -478,7 +487,12 @@ export class CustomerService {
         address: invoice.issuer_address,
       },
       billedTo: { name: invoice.customer_name, address: invoice.customer_address },
-      lines: invoice.lines,
+      lines: (invoice.lines as Array<Record<string, unknown>>).map((l) => ({
+        type: l['line_type'],
+        code: l['code'],
+        label: l['label'],
+        amountPaise: l['amount_paise'],
+      })),
       subtotalPaise: invoice.subtotal_paise,
       discountPaise: invoice.discount_paise,
       taxPaise: invoice.tax_paise,
@@ -514,35 +528,42 @@ export class CustomerService {
     );
   }
 
+  /** The in-app inbox, rendered in the language the message was created in. */
   async notifications(userId: string, limit: number) {
     const rows = await this.db
       .selectFrom('notification as n')
       .innerJoin('notification_template as t', 't.id', 'n.template_id')
+      .leftJoin('booking as b', 'b.id', 'n.booking_id')
+      .leftJoin('city as c', 'c.id', 'b.city_id')
       .select([
         'n.id',
         'n.booking_id',
         'n.created_at',
         'n.read_at',
+        'n.locale',
         't.code',
         'n.variables',
         't.title',
         't.body',
+        'c.time_zone',
       ])
       .where('n.user_id', '=', userId)
       .where('n.channel', '=', 'IN_APP')
       .orderBy('n.created_at', 'desc')
       .limit(limit)
       .execute();
-    return rows.map((r) => ({
-      id: r.id,
-      event: r.code,
-      bookingId: r.booking_id,
-      title: r.title,
-      body: r.body,
-      variables: r.variables,
-      createdAt: r.created_at.toISOString(),
-      read: r.read_at !== null,
-    }));
+    return rows.map((r) => {
+      const variables = formatVariables(r.variables, r.locale, r.time_zone ?? DEFAULT_TIME_ZONE);
+      return {
+        id: r.id,
+        event: r.code,
+        bookingId: r.booking_id,
+        title: r.title ? renderTemplate(r.title, variables) : null,
+        body: renderTemplate(r.body, variables),
+        createdAt: r.created_at.toISOString(),
+        read: r.read_at !== null,
+      };
+    });
   }
 
   async assertOwns(userId: string, bookingId: string): Promise<void> {
@@ -602,4 +623,10 @@ function addressView(row: {
     isDefault: row.is_default,
     serviceable: row.locality_id !== null,
   };
+}
+
+/** The address as saved on the booking, with coordinates as numbers. */
+function bookingAddressView(snapshot: unknown): Record<string, unknown> {
+  const a = (snapshot ?? {}) as Record<string, unknown>;
+  return { ...a, lat: Number(a['lat']), lng: Number(a['lng']) };
 }

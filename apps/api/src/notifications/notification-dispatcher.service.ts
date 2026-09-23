@@ -5,7 +5,7 @@ import { DATABASE } from '../database/database.module.js';
 import type { DB } from '../database/db.generated.js';
 import { CHANNEL_SENDERS, ChannelError, type ChannelSender } from './channels.js';
 import type { NotificationChannel } from './events.js';
-import { formatAmount, formatDateTime, renderTemplate } from './render.js';
+import { formatVariables, renderTemplate } from './render.js';
 
 export const DISPATCH_POLICY = {
   batchSize: 50,
@@ -99,7 +99,11 @@ export class NotificationDispatcher {
       .executeTakeFirstOrThrow();
 
     const channel = row.channel as NotificationChannel;
-    const variables = this.format(row.variables, row.locale, row.time_zone ?? DEFAULT_TIME_ZONE);
+    const variables = formatVariables(
+      row.variables,
+      row.locale,
+      row.time_zone ?? DEFAULT_TIME_ZONE,
+    );
     const title = row.title ? renderTemplate(row.title, variables) : null;
     const body = renderTemplate(row.body, variables);
 
@@ -242,21 +246,6 @@ export class NotificationDispatcher {
       case 'IN_APP':
         return [];
     }
-  }
-
-  private format(raw: unknown, locale: string, timeZone: string): Record<string, string> {
-    const values = (raw ?? {}) as Record<string, unknown>;
-    const out: Record<string, string> = {};
-    for (const [key, value] of Object.entries(values)) {
-      if (value && typeof value === 'object' && '$date' in value) {
-        out[key] = formatDateTime(new Date(String(value.$date)), timeZone, locale);
-      } else if (typeof value === 'number' && /amount/i.test(key)) {
-        out[key] = formatAmount(value, locale);
-      } else {
-        out[key] = String(value);
-      }
-    }
-    return out;
   }
 
   private async mark(id: string, values: UpdateObject<DB, 'notification'>): Promise<void> {

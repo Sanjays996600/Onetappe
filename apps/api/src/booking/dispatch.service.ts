@@ -83,6 +83,8 @@ export class DispatchService {
   async accept(assignmentId: string, context: ActionContext): Promise<void> {
     await inTransaction(this.db, context, async (tx) => {
       const { booking, assignment } = await this.lockAssignment(tx, assignmentId, context);
+      // The worker's app retrying after a lost response: already done, nothing to repeat.
+      if (assignment.status === 'ACCEPTED') return;
       if (assignment.status !== 'OFFERED') {
         throw new BusinessRuleError('OFFER_NOT_OPEN', `This offer is already ${assignment.status}`);
       }

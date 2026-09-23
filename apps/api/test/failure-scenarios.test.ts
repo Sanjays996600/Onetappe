@@ -235,6 +235,40 @@ describe('phones losing signal', () => {
       ).toHaveLength(1);
   });
 
+  it('accepting an offer twice (response lost) keeps one acceptance; others still cannot', async () => {
+    const { world, workers } = await noida(2);
+    const { client, addressId } = await customerWithAddress(world);
+    const { bookingId } = await bookAndPay(client, world, addressId);
+    const offered = await Promise.all(workers.map((w) => w.api.get<Json[]>('/worker/offers')));
+    const holder = offered.findIndex((o) => o.body.length === 1);
+    const offerId = offered[holder]!.body[0]!['offerId'] as string;
+    const first = await workers[holder]!.api.post<Json>(`/worker/offers/${offerId}/accept`);
+    const retry = await workers[holder]!.api.post<Json>(`/worker/offers/${offerId}/accept`);
+    expect([first.status, retry.status]).toEqual([200, 200]);
+    expect(retry.body['status']).toBe('ASSIGNED');
+    const other = await workers[1 - holder]!.api.post<ErrorBody>(
+      `/worker/offers/${offerId}/accept`,
+    );
+    expect(other.body.error.code).toBe('NOT_YOUR_OFFER');
+    const accepted = (await history(bookingId)).filter((h) => h.event === 'WORKER_ACCEPTED');
+    expect(accepted).toHaveLength(1);
+  });
+
+  it("removing an address twice is fine; removing someone else's is not", async () => {
+    const { world } = await noida(0);
+    const { client, addressId } = await customerWithAddress(world);
+    expect((await client.post(`/customer/addresses/${addressId}/archive`)).status).toBeLessThan(
+      300,
+    );
+    expect((await client.post(`/customer/addresses/${addressId}/archive`)).status).toBeLessThan(
+      300,
+    );
+    const intruder = await customerWithAddress(world);
+    expect((await intruder.client.post(`/customer/addresses/${addressId}/archive`)).status).toBe(
+      404,
+    );
+  });
+
   it('a retry of an earlier step after the job moved on is still refused', async () => {
     const { world, workers } = await noida(1);
     const { client, addressId } = await customerWithAddress(world);

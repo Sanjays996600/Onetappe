@@ -475,8 +475,8 @@ export class WorkerService {
         landmark: address['landmark'],
         pincode: address['pincode'],
         cityName: address['cityName'],
-        lat: address['lat'],
-        lng: address['lng'],
+        lat: Number(address['lat']),
+        lng: Number(address['lng']),
         accessNotes: address['accessNotes'],
         // The number is shown only while the job is active.
         contactPhone: contactVisible ? address['contactPhone'] : null,
