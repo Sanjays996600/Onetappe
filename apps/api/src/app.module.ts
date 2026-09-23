@@ -6,6 +6,8 @@ import { ConfigModule } from './config/config.module.js';
 import { CustomerModule } from './customer/customer.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthController } from './health/health.controller.js';
+import { IntegrationOutboxModule } from './integrations/integration-outbox.module.js';
+import { IntegrationsModule } from './integrations/integrations.module.js';
 import { JobsModule } from './jobs/jobs.module.js';
 import { NotificationModule } from './notifications/notification.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
@@ -20,6 +22,7 @@ import { WorkerModule } from './worker/worker.module.js';
     AuthModule,
     NotificationModule,
     StorageModule,
+    IntegrationOutboxModule,
     // Core engine
     BookingModule,
     PaymentsModule,
@@ -28,6 +31,7 @@ import { WorkerModule } from './worker/worker.module.js';
     CustomerModule,
     WorkerModule,
     AdminModule,
+    IntegrationsModule,
   ],
   controllers: [HealthController],
 })

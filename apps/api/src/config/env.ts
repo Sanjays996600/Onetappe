@@ -13,6 +13,12 @@ export type AppEnv = (typeof APP_ENVS)[number];
 const secret = (name: string) =>
   z.string().min(32, `${name} must be at least 32 characters of random data`);
 
+/** "true"/"false" environment flag (anything else is a configuration error). */
+const booleanFlag = z
+  .enum(['true', 'false'])
+  .default('false')
+  .transform((v) => v === 'true');
+
 const EnvSchema = z
   .object({
     APP_ENV: z.enum(APP_ENVS),
@@ -43,6 +49,23 @@ const EnvSchema = z
     RAZORPAY_KEY_ID: z.string().optional(),
     RAZORPAY_KEY_SECRET: z.string().optional(),
     RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
+
+    /**
+     * Zoho (CRM and Desk). Off unless enabled. Endpoints default to the India data centre;
+     * the refresh token and client secret come from the secret manager only.
+     */
+    ZOHO_CRM_ENABLED: booleanFlag,
+    ZOHO_DESK_ENABLED: booleanFlag,
+    ZOHO_ACCOUNTS_URL: z.url().default('https://accounts.zoho.in'),
+    ZOHO_CRM_API_URL: z.url().default('https://www.zohoapis.in/crm/v8'),
+    ZOHO_DESK_API_URL: z.url().default('https://desk.zoho.in/api/v1'),
+    ZOHO_CLIENT_ID: z.string().optional(),
+    ZOHO_CLIENT_SECRET: z.string().optional(),
+    ZOHO_REFRESH_TOKEN: z.string().optional(),
+    ZOHO_DESK_ORG_ID: z.string().optional(),
+    /** Shared secret Zoho Desk must present when calling our webhook. */
+    ZOHO_DESK_WEBHOOK_SECRET: z.string().optional(),
+    ZOHO_HTTP_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(60_000).default(10_000),
 
     /** Notification channel providers; `log` records the message without sending it. */
     PUSH_PROVIDER: z.enum(['log']).default('log'),
@@ -107,6 +130,25 @@ const EnvSchema = z
       (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET || !env.RAZORPAY_WEBHOOK_SECRET)
     ) {
       fail('RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET and RAZORPAY_WEBHOOK_SECRET are required');
+    }
+
+    const zohoEnabled = env.ZOHO_CRM_ENABLED || env.ZOHO_DESK_ENABLED;
+    if (
+      zohoEnabled &&
+      (!env.ZOHO_CLIENT_ID || !env.ZOHO_CLIENT_SECRET || !env.ZOHO_REFRESH_TOKEN)
+    ) {
+      fail('ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET and ZOHO_REFRESH_TOKEN are required for Zoho');
+    }
+    if (env.ZOHO_DESK_ENABLED) {
+      if (!env.ZOHO_DESK_ORG_ID) fail('ZOHO_DESK_ORG_ID is required for Zoho Desk');
+      if (!env.ZOHO_DESK_WEBHOOK_SECRET || env.ZOHO_DESK_WEBHOOK_SECRET.length < 32) {
+        fail('ZOHO_DESK_WEBHOOK_SECRET (32+ characters) is required for Zoho Desk');
+      }
+    }
+    if (zohoEnabled && !['local', 'test'].includes(env.APP_ENV)) {
+      for (const url of [env.ZOHO_ACCOUNTS_URL, env.ZOHO_CRM_API_URL, env.ZOHO_DESK_API_URL]) {
+        if (!url.startsWith('https://')) fail(`Zoho endpoints must use HTTPS (${url})`);
+      }
     }
 
     const secrets = [

@@ -8,6 +8,8 @@ export const ACTION_SOURCES = [
   'ADMIN',
   'SYSTEM',
   'PAYMENT_GATEWAY',
+  /** Changes arriving from an integrated business system (e.g. Zoho Desk ticket status). */
+  'INTEGRATION',
 ] as const;
 
 export type ActionSource = (typeof ACTION_SOURCES)[number];

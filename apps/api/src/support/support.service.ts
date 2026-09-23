@@ -7,6 +7,7 @@ import { DATABASE } from '../database/database.module.js';
 import type { DB } from '../database/db.generated.js';
 import { inTransaction, type Tx } from '../database/transaction.js';
 import { keyReusedError, type IdempotentRequest } from '../common/http/idempotency.js';
+import { IntegrationOutbox } from '../integrations/integration-outbox.service.js';
 
 export const SUPPORT_CATEGORIES = [
   'SERVICE_QUALITY',
@@ -47,6 +48,7 @@ export class SupportService {
   constructor(
     @Inject(DATABASE) private readonly db: Kysely<DB>,
     private readonly clock: Clock,
+    private readonly outbox: IntegrationOutbox,
   ) {}
 
   /**
@@ -115,6 +117,12 @@ export class SupportService {
           source: context.source,
         })
         .execute();
+      // The support desk learns about the case after commit; its availability never
+      // decides whether a customer can raise one.
+      await this.outbox.enqueue(tx, 'DESK_CASE_CREATE', row.id, {
+        requestId: context.requestId,
+        onceKey: row.id,
+      });
       return {
         id: row.id,
         caseCode: row.case_code,
@@ -219,6 +227,55 @@ export class SupportService {
   }
 
   /** A staff action on a case: note, status change or owner change — each recorded. */
+  /**
+   * Applies a status decided in the external support desk (Zoho Desk). Closed cases are
+   * left alone; returns whether anything changed. The update is visible to the raiser.
+   */
+  async applyExternalStatus(
+    context: ActionContext,
+    caseId: string,
+    update: { status: SupportStatus; resolution: string; reference: string },
+  ): Promise<boolean> {
+    return inTransaction(this.db, context, async (tx) => {
+      const current = await tx
+        .selectFrom('support_case')
+        .select(['status'])
+        .where('id', '=', caseId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!current) throw new NotFoundError('Support case', caseId);
+      if (current.status === 'CLOSED' || current.status === update.status) return false;
+      const resolving = update.status === 'RESOLVED' || update.status === 'CLOSED';
+      const reopening = current.status === 'RESOLVED' && !resolving;
+      await tx
+        .updateTable('support_case')
+        .set({
+          status: update.status,
+          ...(resolving
+            ? { resolution_summary: update.resolution, resolved_at: this.clock.now() }
+            : {}),
+          ...(reopening ? { resolved_at: null } : {}),
+          ...(update.status === 'CLOSED' ? { closed_at: this.clock.now() } : {}),
+        })
+        .where('id', '=', caseId)
+        .execute();
+      await tx
+        .insertInto('support_case_event')
+        .values({
+          case_id: caseId,
+          event_type: 'STATUS_CHANGE',
+          from_status: current.status,
+          to_status: update.status,
+          body: resolving ? update.resolution : `Updated by the support team (${update.reference})`,
+          is_internal: false,
+          actor_user_id: null,
+          source: context.source,
+        })
+        .execute();
+      return true;
+    });
+  }
+
   async act(
     context: ActionContext,
     caseId: string,
@@ -242,6 +299,21 @@ export class SupportService {
         throw new BusinessRuleError('CASE_CLOSED', 'This case is closed');
 
       if (input.status && input.status !== current.status) {
+        // One owner per case status: once a case has a Zoho Desk ticket, agents work it
+        // there and its status flows back here. Notes can still be added in One Tappe.
+        const managedInDesk = await tx
+          .selectFrom('external_link')
+          .select('external_ref')
+          .where('target', '=', 'ZOHO_DESK')
+          .where('entity_type', '=', 'support_case')
+          .where('internal_id', '=', caseId)
+          .executeTakeFirst();
+        if (managedInDesk) {
+          throw new BusinessRuleError(
+            'CASE_MANAGED_IN_ZOHO_DESK',
+            `Change the status in Zoho Desk (ticket ${managedInDesk.external_ref ?? ''}); it is reflected here automatically.`,
+          );
+        }
         const resolving = input.status === 'RESOLVED' || input.status === 'CLOSED';
         if (resolving && !input.resolution)
           throw new ValidationError('RESOLUTION_REQUIRED', 'Describe the resolution');

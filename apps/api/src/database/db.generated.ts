@@ -317,6 +317,68 @@ export interface CustomerProfile {
   user_id: string;
 }
 
+export interface ExternalLink {
+  created_at: Generated<Timestamp>;
+  entity_type: string;
+  external_id: string;
+  external_ref: string | null;
+  external_url: string | null;
+  internal_id: string;
+  synced_at: Generated<Timestamp>;
+  target: string;
+}
+
+export interface IntegrationCredential {
+  access_token_encrypted: Buffer | null;
+  api_domain: string | null;
+  expires_at: Timestamp | null;
+  last_error: string | null;
+  last_error_at: Timestamp | null;
+  provider: string;
+  refreshed_at: Timestamp | null;
+}
+
+export interface IntegrationEvent {
+  aggregate_id: string;
+  aggregate_type: string;
+  attempts: Generated<number>;
+  coalescible: Generated<boolean>;
+  created_at: Generated<Timestamp>;
+  dedupe_key: string;
+  event_type: string;
+  id: Generated<number>;
+  last_error: string | null;
+  last_http_status: number | null;
+  locked_by: string | null;
+  locked_until: Timestamp | null;
+  next_attempt_at: Generated<Timestamp>;
+  payload: Generated<Json>;
+  processed_at: Timestamp | null;
+  request_id: string | null;
+  resolution_note: string | null;
+  resolved_by: string | null;
+  status: Generated<string>;
+  target: string;
+}
+
+export interface IntegrationInboundEvent {
+  external_ids: Generated<string[]>;
+  id: Generated<number>;
+  payload: Json;
+  received_at: Generated<Timestamp>;
+  request_id: string | null;
+  source: string;
+}
+
+export interface IntegrationTargetState {
+  consecutive_failures: Generated<number>;
+  last_failure_at: Timestamp | null;
+  last_success_at: Timestamp | null;
+  pause_reason: string | null;
+  paused_until: Timestamp | null;
+  target: string;
+}
+
 export interface Invoice {
   booking_id: string;
   customer_address: string;
@@ -1076,6 +1138,11 @@ export interface DB {
   consent_record: ConsentRecord;
   credit_note: CreditNote;
   customer_profile: CustomerProfile;
+  external_link: ExternalLink;
+  integration_credential: IntegrationCredential;
+  integration_event: IntegrationEvent;
+  integration_inbound_event: IntegrationInboundEvent;
+  integration_target_state: IntegrationTargetState;
   invoice: Invoice;
   invoice_sequence: InvoiceSequence;
   job_lease: JobLease;

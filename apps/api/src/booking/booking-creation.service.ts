@@ -25,6 +25,7 @@ import {
 } from '../service-area/serviceability.service.js';
 import { instantStart, validateScheduledStart } from './booking-schedule.js';
 import { CapacityService } from './capacity.service.js';
+import { IntegrationOutbox } from '../integrations/integration-outbox.service.js';
 
 const MINUTE_MS = 60_000;
 
@@ -69,6 +70,7 @@ export class BookingCreationService {
     private readonly serviceability: ServiceabilityService,
     private readonly pricing: PricingService,
     private readonly capacity: CapacityService,
+    private readonly outbox: IntegrationOutbox,
   ) {}
 
   /**
@@ -219,6 +221,9 @@ export class BookingCreationService {
       })
       .returning(['id', 'booking_code', 'status'])
       .executeTakeFirstOrThrow();
+    await this.outbox.enqueue(tx, 'CRM_BOOKING_SYNC', booking.id, {
+      requestId: context.requestId,
+    });
 
     await tx
       .insertInto('booking_price_line')

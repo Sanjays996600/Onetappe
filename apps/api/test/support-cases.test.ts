@@ -77,6 +77,13 @@ describe('support cases from the customer app', () => {
     expect(opened.status).toBe(201);
     expect(opened.body).toMatchObject({ status: 'OPEN', replayed: false });
     expect(opened.body['caseCode']).toMatch(/^SC\d{7}$/);
+    // With Zoho switched off (this environment), nothing is queued for it.
+    const queued = await app.db
+      .selectFrom('integration_event')
+      .select('id')
+      .where('aggregate_id', '=', opened.body['id'] as string)
+      .execute();
+    expect(queued).toEqual([]);
   });
 
   it('cannot attach a case to someone else’s booking', async () => {

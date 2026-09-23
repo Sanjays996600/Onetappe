@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
 import { BookingModule } from '../booking/booking.module.js';
+import { IntegrationsModule } from '../integrations/integrations.module.js';
 import { PaymentsModule } from '../payments/payments.module.js';
 import { JobRunner } from './job-runner.service.js';
 
 @Module({
-  imports: [BookingModule, PaymentsModule],
+  imports: [BookingModule, PaymentsModule, IntegrationsModule],
   providers: [JobRunner],
   exports: [JobRunner],
 })

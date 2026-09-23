@@ -13,6 +13,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../common/errors.js';
+import { IntegrationOutbox } from '../integrations/integration-outbox.service.js';
 
 export interface LockedBooking {
   readonly id: string;
@@ -34,6 +35,8 @@ export interface LockedBooking {
  */
 @Injectable()
 export class BookingTransitionService {
+  constructor(private readonly outbox: IntegrationOutbox) {}
+
   /** Locks the booking row for the rest of the transaction. */
   async lock(tx: Tx, bookingId: string): Promise<LockedBooking> {
     const row = await tx
@@ -103,6 +106,10 @@ export class BookingTransitionService {
       .where('id', '=', booking.id)
       .execute();
     await setEvent(tx, '', context.reason);
+    // Every status change is mirrored to the CRM (when configured), after commit.
+    await this.outbox.enqueue(tx, 'CRM_BOOKING_SYNC', booking.id, {
+      requestId: context.requestId,
+    });
     return result.transition.to;
   }
 }

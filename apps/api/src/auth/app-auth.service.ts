@@ -9,6 +9,7 @@ import { inTransaction, type Tx } from '../database/transaction.js';
 import { randomToken } from '../security/crypto.js';
 import { OtpService, type OtpClientApp } from './otp/otp.service.js';
 import { SessionService, type IssuedTokens, type SessionMeta } from './session.service.js';
+import { IntegrationOutbox } from '../integrations/integration-outbox.service.js';
 
 export interface AppSignIn {
   readonly tokens: IssuedTokens;
@@ -34,6 +35,7 @@ export class AppAuthService {
     private readonly otp: OtpService,
     private readonly sessions: SessionService,
     private readonly audit: AuditService,
+    private readonly outbox: IntegrationOutbox,
   ) {}
 
   async signIn(
@@ -72,6 +74,11 @@ export class AppAuthService {
           .returning('user_id')
           .executeTakeFirst();
         isNew = created !== undefined;
+        if (isNew) {
+          await this.outbox.enqueue(tx, 'CRM_CUSTOMER_SYNC', user.id, {
+            requestId: context.requestId,
+          });
+        }
         const address = await tx
           .selectFrom('address')
           .select('id')

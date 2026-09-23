@@ -13,6 +13,7 @@ import { NotificationDispatcher } from '../notifications/notification-dispatcher
 import { PaymentService } from '../payments/payment.service.js';
 import { RefundService } from '../payments/refund.service.js';
 import { SettlementService } from '../payments/settlement.service.js';
+import { IntegrationDispatcher } from '../integrations/integration-dispatcher.service.js';
 
 export const JOB_NAMES = [
   'expire-unpaid-bookings',
@@ -23,6 +24,8 @@ export const JOB_NAMES = [
   'reconcile-payments',
   'process-refunds',
   'settle-bookings',
+  'deliver-integration-events',
+  'pull-zoho-desk-updates',
 ] as const;
 
 export type JobName = (typeof JOB_NAMES)[number];
@@ -61,6 +64,7 @@ export class JobRunner implements OnApplicationShutdown {
     payments: PaymentService,
     refunds: RefundService,
     settlement: SettlementService,
+    integrations: IntegrationDispatcher,
   ) {
     this.jobs = {
       'expire-unpaid-bookings': {
@@ -137,6 +141,15 @@ export class JobRunner implements OnApplicationShutdown {
       'settle-bookings': {
         intervalMs: 60_000,
         run: async (id) => (await settlement.settleDue(id)).filter((o) => o.settled).length,
+      },
+      'deliver-integration-events': {
+        intervalMs: 5_000,
+        run: (id) => integrations.deliverDue(id),
+      },
+      'pull-zoho-desk-updates': {
+        // Safety net for missed Desk webhooks; bounded to respect Zoho API credits.
+        intervalMs: 10 * 60_000,
+        run: (id) => integrations.schedulePulls(id),
       },
     };
   }

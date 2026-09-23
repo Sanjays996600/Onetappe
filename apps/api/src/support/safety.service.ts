@@ -7,6 +7,7 @@ import { DATABASE } from '../database/database.module.js';
 import type { DB } from '../database/db.generated.js';
 import { inTransaction, type Tx } from '../database/transaction.js';
 import { keyReusedError, type IdempotentRequest } from '../common/http/idempotency.js';
+import { IntegrationOutbox } from '../integrations/integration-outbox.service.js';
 
 export const SAFETY_CATEGORIES = [
   'SOS',
@@ -45,6 +46,7 @@ export class SafetyService {
   constructor(
     @Inject(DATABASE) private readonly db: Kysely<DB>,
     private readonly clock: Clock,
+    private readonly outbox: IntegrationOutbox,
   ) {}
 
   /**
@@ -113,6 +115,10 @@ export class SafetyService {
           source: context.source,
         })
         .execute();
+      await this.outbox.enqueue(tx, 'DESK_SAFETY_CREATE', row.id, {
+        requestId: context.requestId,
+        onceKey: row.id,
+      });
       return { ...row, replayed: false };
     });
     if (incident.severity === 'CRITICAL' && !incident.replayed) {

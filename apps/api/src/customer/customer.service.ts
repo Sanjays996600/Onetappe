@@ -12,6 +12,7 @@ import { inTransaction, type Tx } from '../database/transaction.js';
 import { keyReusedError, type IdempotentRequest } from '../common/http/idempotency.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import { ServiceabilityService } from '../service-area/serviceability.service.js';
+import { IntegrationOutbox } from '../integrations/integration-outbox.service.js';
 
 export interface AddressInput {
   readonly label: string;
@@ -52,6 +53,7 @@ export class CustomerService {
     private readonly pricing: PricingService,
     private readonly codes: VerificationCodeService,
     private readonly clock: Clock,
+    private readonly outbox: IntegrationOutbox,
   ) {}
 
   // ---- Profile -----------------------------------------------------------
@@ -106,6 +108,9 @@ export class CustomerService {
       if (input.preferredLocale !== undefined) values.preferred_locale = input.preferredLocale;
       if (Object.keys(values).length > 0) {
         await tx.updateTable('app_user').set(values).where('id', '=', userId).execute();
+        await this.outbox.enqueue(tx, 'CRM_CUSTOMER_SYNC', userId, {
+          requestId: context.requestId,
+        });
       }
       if (input.marketingOptIn !== undefined) {
         await tx
