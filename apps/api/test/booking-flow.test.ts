@@ -417,7 +417,7 @@ describe('reassignment', () => {
     // Simulate the clock running out on the offer. Offer times are immutable by design,
     // so the guard trigger is switched off for this one test update only.
     await sql`ALTER TABLE booking_assignment DISABLE TRIGGER booking_assignment_before_update`.execute(
-      app.db,
+      app.owner,
     );
     try {
       await inTransaction(app.db, SYSTEM, (tx) =>
@@ -432,7 +432,7 @@ describe('reassignment', () => {
       );
     } finally {
       await sql`ALTER TABLE booking_assignment ENABLE TRIGGER booking_assignment_before_update`.execute(
-        app.db,
+        app.owner,
       );
     }
 

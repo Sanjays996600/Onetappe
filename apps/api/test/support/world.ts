@@ -1,7 +1,8 @@
 import { randomInt, randomUUID } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
-import { sql, type Kysely } from 'kysely';
+import { Kysely, PostgresDialect, sql } from 'kysely';
+import pg from 'pg';
 import { AppModule } from '../../src/app.module.js';
 import { configureApp, createAdapter } from '../../src/bootstrap.js';
 import { loadEnv } from '../../src/config/env.js';
@@ -19,7 +20,13 @@ import { inTransaction, type Tx } from '../../src/database/transaction.js';
 
 export interface TestApp {
   readonly http: NestFastifyApplication;
+  /** The application's own connection: the least-privilege runtime role (onetappe_app). */
   readonly db: Kysely<DB>;
+  /**
+   * The schema owner, for fixtures the application itself can never do (e.g. switching a
+   * guard trigger off to move a timestamp into the past).
+   */
+  readonly owner: Kysely<DB>;
   readonly creation: BookingCreationService;
   readonly lifecycle: BookingLifecycleService;
   readonly dispatch: DispatchService;
@@ -59,6 +66,7 @@ export async function createTestApp(
     lifecycle: app.get(BookingLifecycleService),
     dispatch: app.get(DispatchService),
     codes: app.get(VerificationCodeService),
+    owner: ownerDb(),
     close: () => app.close(),
   };
 }
@@ -434,4 +442,18 @@ export async function createWorld(db: Kysely<DB>, options: WorldOptions = {}): P
     };
     return world;
   });
+}
+
+let sharedOwner: Kysely<DB> | undefined;
+
+/** One small owner pool per test file; idle connections close so the file can exit. */
+function ownerDb(): Kysely<DB> {
+  const url = process.env['TEST_DATABASE_URL'];
+  if (!url) throw new Error('TEST_DATABASE_URL must be set');
+  sharedOwner ??= new Kysely<DB>({
+    dialect: new PostgresDialect({
+      pool: new pg.Pool({ connectionString: url, max: 2, allowExitOnIdle: true }),
+    }),
+  });
+  return sharedOwner;
 }

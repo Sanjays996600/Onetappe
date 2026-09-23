@@ -205,7 +205,7 @@ export async function onboardWorkerViaApi(
 /** Moves an offer's expiry into the past (offer times are otherwise immutable by design). */
 export async function expireOffer(app: TestApp, assignmentId: string): Promise<void> {
   await sql`ALTER TABLE booking_assignment DISABLE TRIGGER booking_assignment_before_update`.execute(
-    app.db,
+    app.owner,
   );
   try {
     await inTransaction(app.db, SYSTEM, (tx) =>
@@ -220,7 +220,7 @@ export async function expireOffer(app: TestApp, assignmentId: string): Promise<v
     );
   } finally {
     await sql`ALTER TABLE booking_assignment ENABLE TRIGGER booking_assignment_before_update`.execute(
-      app.db,
+      app.owner,
     );
   }
 }

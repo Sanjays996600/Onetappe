@@ -404,3 +404,22 @@ describe('other people’s records (IDOR)', () => {
     expect([401, 403]).toContain((await client.get('/admin/config/cities')).status);
   });
 });
+
+describe('response headers', () => {
+  it('every response forbids framing, sniffing and caching', async () => {
+    for (const res of [
+      await app.http.inject({ method: 'GET', url: '/api/v1/customer/catalog' }), // 401
+      await app.http.inject({ method: 'GET', url: '/api/v1/health/live' }),
+    ]) {
+      expect(res.headers).toMatchObject({
+        'x-content-type-options': 'nosniff',
+        'x-frame-options': 'DENY',
+        'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+        'referrer-policy': 'no-referrer',
+        'cache-control': 'no-store',
+      });
+      // HSTS only where TLS terminates in front of the API (staging/production).
+      expect(res.headers['strict-transport-security']).toBeUndefined();
+    }
+  });
+});

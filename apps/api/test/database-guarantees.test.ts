@@ -133,6 +133,8 @@ describe('booking protections (enforced even for raw SQL)', () => {
     ).rejects.toMatchObject({ code: 'BUSINESS_RULE_VIOLATED' });
   });
 
+  // Run as the schema owner: the triggers hold even for a connection that has the table
+  // privileges the application role lacks (see "least privilege" below).
   it('keeps status history, schedule history, price lines and the audit log append-only', async () => {
     const world = await createWorld(app.db);
     const { customer, booking } = await newBooking(world);
@@ -162,18 +164,18 @@ describe('booking protections (enforced even for raw SQL)', () => {
 
       await expect(
         sql`UPDATE ${sql.table(table)} SET ${sql.ref(column)} = 'tampered' WHERE ${match}`.execute(
-          app.db,
+          app.owner,
         ),
         `${table} update`,
       ).rejects.toMatchObject({ code: 'OT001' });
       await expect(
-        sql`DELETE FROM ${sql.table(table)} WHERE ${match}`.execute(app.db),
+        sql`DELETE FROM ${sql.table(table)} WHERE ${match}`.execute(app.owner),
         `${table} delete`,
       ).rejects.toMatchObject({
         code: 'OT001',
       });
       await expect(
-        sql`TRUNCATE ${sql.table(table)} CASCADE`.execute(app.db),
+        sql`TRUNCATE ${sql.table(table)} CASCADE`.execute(app.owner),
         `${table} truncate`,
       ).rejects.toMatchObject({
         code: 'OT001',
@@ -428,5 +430,44 @@ describe('money protections', () => {
           .execute(),
       ),
     ).rejects.toMatchObject({ code: 'BUSINESS_RULE_VIOLATED' });
+  });
+});
+
+describe('the application runs with least privilege', () => {
+  const refused = { code: '42501' }; // insufficient_privilege / must be owner
+
+  it('connects as the runtime role, not the schema owner', async () => {
+    const { rows } = await sql<{
+      user: string;
+      member: boolean;
+    }>`SELECT current_user AS user, pg_has_role(current_user, 'onetappe_app', 'MEMBER') AS member`.execute(
+      app.db,
+    );
+    expect(rows[0]).toEqual({ user: 'onetappe_app_test', member: true });
+  });
+
+  it('cannot switch off triggers, change the schema or empty tables', async () => {
+    for (const statement of [
+      sql`ALTER TABLE booking DISABLE TRIGGER ALL`,
+      sql`ALTER TABLE audit_log DISABLE TRIGGER audit_log_append_only`,
+      sql`DROP TABLE booking_rating`,
+      sql`CREATE TABLE shadow (id int)`,
+      sql`TRUNCATE booking_status_history`,
+      sql`SET session_replication_role = replica`,
+    ]) {
+      await expect(statement.execute(app.db)).rejects.toMatchObject(refused);
+    }
+  });
+
+  it('cannot rewrite history or the migration record, even without the triggers', async () => {
+    for (const statement of [
+      sql`UPDATE audit_log SET reason = 'tampered' WHERE false`,
+      sql`DELETE FROM booking_status_history WHERE false`,
+      sql`UPDATE invoice SET total_paise = 0 WHERE false`,
+      sql`INSERT INTO booking_status_transition (from_status, event, to_status) VALUES ('X', 'Y', 'Z')`,
+      sql`DELETE FROM schema_migration WHERE false`,
+    ]) {
+      await expect(statement.execute(app.db)).rejects.toMatchObject(refused);
+    }
   });
 });

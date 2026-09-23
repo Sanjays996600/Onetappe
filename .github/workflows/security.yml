@@ -1,0 +1,83 @@
+name: Security
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+  schedule:
+    # Weekly, so newly published advisories are caught even when nothing is merged.
+    - cron: '30 2 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+# Each check is its own job so branch protection can require them individually:
+#   secret-scan · dependency-audit · dependency-review (PRs) · codeql
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITLEAKS_VERSION: 8.24.0
+      # From the release's gitleaks_<version>_checksums.txt; a tampered download fails here.
+      GITLEAKS_SHA256: cb49b7de5ee986510fe8666ca0273a6cc15eb82571f2f14832c9e8920751f3a4
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 0 }
+      - name: Install gitleaks (pinned and checksum-verified)
+        run: |
+          curl -sSfL -o gitleaks.tgz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum --check
+          tar -xzf gitleaks.tgz gitleaks
+      - name: Scan the full history for committed secrets
+        # Reviewed false positives are listed by fingerprint in .gitleaksignore.
+        run: ./gitleaks git --redact --verbose .
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: No known high or critical vulnerabilities in any dependency
+        run: pnpm audit --audit-level high
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: New or changed dependencies are free of known vulnerabilities
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+
+  codeql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:javascript-typescript

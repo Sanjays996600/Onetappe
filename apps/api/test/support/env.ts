@@ -3,11 +3,17 @@ import 'reflect-metadata';
 const url = process.env['TEST_DATABASE_URL'];
 if (!url) throw new Error('TEST_DATABASE_URL must be set to run the API tests');
 
+// The application connects as the least-privilege runtime role, exactly as in production
+// (the login is created by global-setup; migrations and owner-only fixtures use `url`).
+const appUrl = new URL(url);
+appUrl.username = 'onetappe_app_test';
+appUrl.password = 'onetappe_app_test';
+
 // The application under test always talks to the test database with test-only providers.
 // These values are fixed test fixtures, not secrets used anywhere else.
 Object.assign(process.env, {
   APP_ENV: 'test',
-  DATABASE_URL: url,
+  DATABASE_URL: appUrl.toString(),
   AUTH_TOKEN_SECRET: 'test-auth-token-secret-0123456789-abcdef',
   OTP_HASH_SECRET: 'test-otp-hash-secret-0123456789-abcdefgh',
   VERIFICATION_CODE_SECRET: 'test-verification-secret-0123456789-abcd',

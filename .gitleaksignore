@@ -1,0 +1,4 @@
+# Reviewed, deliberately fake values (never used outside local development and tests; the
+# API refuses them when APP_ENV is staging or production — see src/config/env.ts).
+bb2dd45585e7bdf7a24409f9251384ffa4881b27:apps/api/test/support/env.ts:generic-api-key:13
+bb2dd45585e7bdf7a24409f9251384ffa4881b27:apps/api/.env.example:generic-api-key:13

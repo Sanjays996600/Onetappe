@@ -1,0 +1,18 @@
+# Dependency updates arrive as pull requests, which then pass the same CI, security checks
+# and review as any other change. Nothing is merged automatically.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 10
+    groups:
+      # Minor/patch updates in one PR per week; majors arrive one by one.
+      minor-and-patch:
+        update-types: [minor, patch]
+    labels: [dependencies]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    labels: [dependencies, ci]

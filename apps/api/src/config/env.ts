@@ -13,6 +13,9 @@ export type AppEnv = (typeof APP_ENVS)[number];
 const secret = (name: string) =>
   z.string().min(32, `${name} must be at least 32 characters of random data`);
 
+/** Values from .env.example, test fixtures or tutorials; never acceptable outside local/test. */
+const PLACEHOLDER_SECRET = /change-?me|^local-|^test-|example|placeholder|secret-?here/i;
+
 /** "true"/"false" environment flag (anything else is a configuration error). */
 const booleanFlag = z
   .enum(['true', 'false'])
@@ -129,6 +132,27 @@ const EnvSchema = z
     } else if (env.RAZORPAY_KEY_ID?.startsWith('rzp_live_')) {
       // Live money must never move from a non-production environment.
       fail(`${env.APP_ENV} must not use live Razorpay keys`);
+    }
+
+    if (!['local', 'test'].includes(env.APP_ENV)) {
+      // A copied .env.example or test value would put publicly known secrets in charge of
+      // tokens, OTP hashes and encrypted bank details.
+      const secrets = {
+        AUTH_TOKEN_SECRET: env.AUTH_TOKEN_SECRET,
+        OTP_HASH_SECRET: env.OTP_HASH_SECRET,
+        VERIFICATION_CODE_SECRET: env.VERIFICATION_CODE_SECRET,
+        SANDBOX_WEBHOOK_SECRET: env.SANDBOX_WEBHOOK_SECRET,
+        METRICS_TOKEN: env.METRICS_TOKEN,
+      };
+      for (const [name, value] of Object.entries(secrets)) {
+        if (value && PLACEHOLDER_SECRET.test(value))
+          fail(`${name} looks like a development placeholder; generate a real random secret`);
+      }
+      const key = Buffer.from(env.DATA_ENCRYPTION_KEY, 'base64');
+      // Random bytes are never all printable text, and rarely repeat much.
+      if (new Set(key).size < 16 || key.every((b) => b >= 0x20 && b < 0x7f)) {
+        fail('DATA_ENCRYPTION_KEY is not random (generate one with `openssl rand -base64 32`)');
+      }
     }
 
     if (!['local', 'test'].includes(env.APP_ENV)) {

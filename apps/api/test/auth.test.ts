@@ -196,13 +196,13 @@ describe('customer OTP sign-in', () => {
     // Two challenges can only exist if the first is older than the cooldown.
     const a = await api.post<Challenge>('/customer/auth/otp', { phone });
     const codeA = outbox.latestCodeFor(a.body.phone)!;
-    await sql`ALTER TABLE otp_challenge DISABLE TRIGGER ALL`.execute(app.db);
+    await sql`ALTER TABLE otp_challenge DISABLE TRIGGER ALL`.execute(app.owner);
     await app.db
       .updateTable('otp_challenge')
       .set({ created_at: sql`created_at - interval '1 minute'` })
       .where('id', '=', a.body.challengeId)
       .execute();
-    await sql`ALTER TABLE otp_challenge ENABLE TRIGGER ALL`.execute(app.db);
+    await sql`ALTER TABLE otp_challenge ENABLE TRIGGER ALL`.execute(app.owner);
     const b = await api.post<Challenge>('/worker/auth/otp', { phone });
     const codeB = outbox.latestCodeFor(b.body.phone)!;
 

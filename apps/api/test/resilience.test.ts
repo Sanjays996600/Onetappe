@@ -12,7 +12,7 @@ let app: TestApp;
 let api: ApiClient;
 
 beforeAll(async () => {
-  const started = await FaultyTcpProxy.start(process.env['TEST_DATABASE_URL']!);
+  const started = await FaultyTcpProxy.start(process.env['DATABASE_URL']!);
   proxy = started.proxy;
   // The application reaches PostgreSQL only through the proxy.
   app = await createTestApp({

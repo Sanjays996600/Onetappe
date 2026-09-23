@@ -4,6 +4,7 @@ import type { INestApplication } from '@nestjs/common';
 import { AppModule } from './app.module.js';
 import { AppErrorFilter } from './common/app-error.filter.js';
 import { registerRequestId } from './common/http/request-id.js';
+import { registerSecurityHeaders } from './common/http/security-headers.js';
 import { registerHttpObservability } from './observability/http-observability.js';
 import type { JsonLogger } from './observability/json-logger.js';
 import type { Metrics } from './observability/metrics.js';
@@ -25,12 +26,18 @@ export function createAdapter(env: Pick<Env, 'APP_ENV'>): FastifyAdapter {
 }
 
 /** HTTP configuration shared by the server and the tests. */
-export function configureApp(app: INestApplication, env: Pick<Env, 'CORS_ORIGINS'>): void {
+export function configureApp(
+  app: INestApplication,
+  env: Pick<Env, 'APP_ENV' | 'CORS_ORIGINS'>,
+): void {
   // One version prefix for every client; breaking changes go to /api/v2.
   app.setGlobalPrefix(API_PREFIX);
   app.useGlobalFilters(new AppErrorFilter());
   const fastify = (app as NestFastifyApplication).getHttpAdapter().getInstance();
   registerRequestId(fastify);
+  registerSecurityHeaders(fastify, {
+    hsts: env.APP_ENV === 'staging' || env.APP_ENV === 'production',
+  });
   registerHttpObservability(fastify, app.get<JsonLogger>(APP_LOGGER), app.get<Metrics>(METRICS));
   // Document uploads (local storage provider) arrive as raw bytes with their own limit.
   fastify.addContentTypeParser(

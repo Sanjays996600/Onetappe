@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadEnv } from '../src/config/env.js';
 import { inTransaction } from '../src/database/transaction.js';
+import { deployedSecrets } from './support/deployed-env.js';
 import { FakeMessaging } from './support/fake-messaging.js';
 import { ApiClient } from './support/http.js';
 import { deliverWebhook, runJob, sandbox } from './support/journey.js';
@@ -306,11 +307,11 @@ async function paidBookingFor(session: Awaited<ReturnType<typeof signInWithOtp>>
 describe('provider configuration rules', () => {
   const base = {
     ...process.env,
+    ...deployedSecrets(),
     APP_ENV: 'staging',
     OTP_PROVIDER: 'msg91',
     MSG91_AUTH_KEY: 'k',
     MSG91_TEMPLATE_ID: 't',
-    METRICS_TOKEN: 'metrics-token-0123456789-abcdefghijkl',
     STORAGE_PROVIDER: 's3',
     S3_BUCKET: 'onetappe-staging-documents',
     MALWARE_SCANNER: 'clamav',
@@ -357,11 +358,11 @@ describe('provider configuration rules', () => {
 describe('document storage configuration rules', () => {
   const base = {
     ...process.env,
+    ...deployedSecrets(),
     APP_ENV: 'staging',
     OTP_PROVIDER: 'msg91',
     MSG91_AUTH_KEY: 'k',
     MSG91_TEMPLATE_ID: 't',
-    METRICS_TOKEN: 'metrics-token-0123456789-abcdefghijkl',
     PUSH_PROVIDER: 'none',
     SMS_PROVIDER: 'none',
     EMAIL_PROVIDER: 'none',

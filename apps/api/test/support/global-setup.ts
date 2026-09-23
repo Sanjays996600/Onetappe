@@ -17,6 +17,13 @@ export default async function setup(): Promise<void> {
   try {
     await pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
     await migrate(pool, MIGRATIONS);
+    // The login the application under test uses: a member of the runtime role only.
+    await pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'onetappe_app_test') THEN
+          CREATE ROLE onetappe_app_test LOGIN PASSWORD 'onetappe_app_test' IN ROLE onetappe_app;
+        END IF;
+      END $$`);
   } finally {
     await pool.end();
   }

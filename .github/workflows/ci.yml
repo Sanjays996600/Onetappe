@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 # Each check is its own job so branch protection can require them individually:
-#   format · lint · typecheck · domain-tests · migrations · integration-tests
+#   format · lint · typecheck · domain-tests · migration-guard · migrations · integration-tests
 jobs:
   format:
     runs-on: ubuntu-latest
@@ -57,6 +57,22 @@ jobs:
         with: { node-version-file: .nvmrc, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @onetappe/domain test
+
+  migration-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 0 }
+      - name: Existing migrations are never edited, renamed or removed
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: |
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "New branch: nothing to compare with (pull requests are always checked)."
+            exit 0
+          fi
+          node scripts/check-migrations.mjs "$BASE"
 
   migrations:
     runs-on: ubuntu-latest

@@ -1,0 +1,12 @@
+# Every change needs approval from a code owner (enforced by branch protection on main).
+# Replace or extend with the engineering team's handles as the team grows; payment,
+# security and database paths should then name a second, senior reviewer.
+*                                   @Sanjays996600
+
+# Money, identity and data guarantees — reviewed with extra care.
+/apps/api/migrations/               @Sanjays996600
+/apps/api/src/payments/             @Sanjays996600
+/apps/api/src/auth/                 @Sanjays996600
+/apps/api/src/storage/              @Sanjays996600
+/apps/api/src/config/env.ts         @Sanjays996600
+/.github/                           @Sanjays996600
