@@ -1,5 +1,8 @@
 # One Tappe — System matrix
 
+Security and readiness classification, with blockers before pilot and production:
+[11-security-readiness.md](11-security-readiness.md).
+
 Verified against the code and tests on 23 Sep 2026: branch
 `claude/appointment-booking-app-design-tqp3ip`, migrations 0001–0024, 25 API test files
 and 256 tests passing, 7 browser tests (admin panel, and the customer and worker apps'
@@ -81,15 +84,15 @@ web builds) passing, and CI plus the Security workflow green.
 
 ## Support, safety and Zoho
 
-| Component                                               | Status      | Must be done          | Evidence / what remains                                                                                                 |
-| ------------------------------------------------------- | ----------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Support cases → Zoho Desk tickets → status back         | PARTIAL     | Before production     | Complete against a Zoho fake (`zoho-integration.test.ts`); verify with the company Desk ([08](08-provider-setup.md) §3) |
-| Zoho CRM customer and booking mirror                    | PARTIAL     | Before production     | Same: built and fake-tested, not verified live                                                                          |
-| Zoho outage isolation, retries, dead letter, monitoring | COMPLETE    | —                     | `zoho-integration.test.ts`, `/admin/integrations`                                                                       |
-| Zoho SalesIQ chat                                       | NOT STARTED | With the customer app | Client-side SDK in the customer app; escalations become Desk tickets                                                    |
-| Zoho Mail (transactional, ZeptoMail)                    | PARTIAL     | Before production     | Adapter built; verify domain and delivery                                                                               |
-| Zoho People, Zoho Projects                              | —           | —                     | Not needed by the platform                                                                                              |
-| SOS / safety incidents                                  | PARTIAL     | Before production     | Recorded, alerted (`SafetyIncidentOpen`), Desk reference ticket. **Paging a named on-call person is not built**         |
+| Component                                               | Status      | Must be done          | Evidence / what remains                                                                                                                                                                                                                                  |
+| ------------------------------------------------------- | ----------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Support cases → Zoho Desk tickets → status back         | PARTIAL     | Before production     | Complete against a Zoho fake (`zoho-integration.test.ts`); verify with the company Desk ([08](08-provider-setup.md) §3)                                                                                                                                  |
+| Zoho CRM customer and booking mirror                    | PARTIAL     | Before production     | Same: built and fake-tested, not verified live                                                                                                                                                                                                           |
+| Zoho outage isolation, retries, dead letter, monitoring | COMPLETE    | —                     | `zoho-integration.test.ts`, `/admin/integrations`                                                                                                                                                                                                        |
+| Zoho SalesIQ chat                                       | NOT STARTED | With the customer app | Client-side SDK in the customer app; escalations become Desk tickets                                                                                                                                                                                     |
+| Zoho Mail (transactional, ZeptoMail)                    | PARTIAL     | Before production     | Adapter built; verify domain and delivery                                                                                                                                                                                                                |
+| Zoho People, Zoho Projects                              | —           | —                     | Not needed by the platform                                                                                                                                                                                                                               |
+| SOS / safety incidents                                  | PARTIAL     | **Before pilot**      | Recorded, paged to the on-call roster by SMS and email with escalation until acknowledged, alerted in Prometheus, Desk reference ticket. Needs the DLT template, a staffed roster and an Alertmanager phone receiver ([11](11-security-readiness.md) B2) |
 
 ## Notifications
 

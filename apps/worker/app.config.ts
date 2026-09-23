@@ -18,6 +18,8 @@ const config: ExpoConfig = {
   platforms: ['android', 'ios', 'web'],
   android: {
     package: 'in.onetappe.partner',
+    // No Android cloud/adb backups of app data (sessions stay on this device only).
+    allowBackup: false,
     permissions: ['ACCESS_COARSE_LOCATION', 'ACCESS_FINE_LOCATION'],
   },
   ios: {

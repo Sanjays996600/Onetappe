@@ -15,6 +15,7 @@ Launching in Noida with **HH60 House Help**; services, areas and prices are conf
 | [docs/08-provider-setup.md](docs/08-provider-setup.md)                   | Razorpay, MSG91, Zoho, FCM, email, S3, PostgreSQL setup and launch checks                                |
 | [docs/09-github-controls.md](docs/09-github-controls.md)                 | Exact GitHub ruleset and security settings                                                               |
 | [docs/10-system-matrix.md](docs/10-system-matrix.md)                     | Status of every component, and what must happen before UI and production                                 |
+| [docs/11-security-readiness.md](docs/11-security-readiness.md)           | Security and readiness review: data map, authorization, SOS, recovery, blockers before pilot/production  |
 
 ## Repository
 

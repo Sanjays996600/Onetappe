@@ -26,6 +26,11 @@ import {
 } from './providers/payment-provider.js';
 import { RefundService } from './refund.service.js';
 
+/** A double tap waits this long for the order the first tap is creating. */
+const ORDER_WAIT_MS = 10_000;
+/** An order creation still unfinished after this long is treated as abandoned. */
+const ORDER_START_TIMEOUT_MS = 60_000;
+
 export interface PaymentInitiation {
   readonly paymentId: string;
   readonly provider: string;
@@ -113,6 +118,28 @@ export class PaymentService {
         };
       }
 
+      // Another request (a double tap) is creating the gateway order right now: wait for
+      // it rather than open a second order. One stuck for a minute (the process died
+      // mid-way) is abandoned; the customer never saw it, so it cannot be paid.
+      const starting = await tx
+        .selectFrom('payment')
+        .select(['id', 'created_at'])
+        .where('booking_id', '=', bookingId)
+        .where('status', '=', 'CREATED')
+        .where('checkout', 'is', null)
+        .orderBy('created_at', 'desc')
+        .executeTakeFirst();
+      if (starting) {
+        if (this.clock.now().getTime() - starting.created_at.getTime() < ORDER_START_TIMEOUT_MS) {
+          return { reuse: 'WAIT' as const, paymentId: starting.id, payBy: row.payment_due_by };
+        }
+        await tx
+          .updateTable('payment')
+          .set({ status: 'FAILED', failure_reason: 'Gateway order creation abandoned' })
+          .where('id', '=', starting.id)
+          .execute();
+      }
+
       const payment = await tx
         .insertInto('payment')
         .values({
@@ -132,6 +159,7 @@ export class PaymentService {
       };
     });
 
+    if (prepared.reuse === 'WAIT') return this.awaitOrder(prepared.paymentId, prepared.payBy);
     if (prepared.reuse) {
       return {
         paymentId: prepared.paymentId,
@@ -184,6 +212,39 @@ export class PaymentService {
         'Payment could not be started. Please try again.',
       );
     }
+  }
+
+  /** Waits for the gateway order another request is creating for the same booking. */
+  private async awaitOrder(paymentId: string, payBy: Date): Promise<PaymentInitiation> {
+    const deadline = Date.now() + ORDER_WAIT_MS;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      const payment = await this.db
+        .selectFrom('payment')
+        .select(['status', 'amount_paise', 'checkout'])
+        .where('id', '=', paymentId)
+        .executeTakeFirstOrThrow();
+      if (payment.status === 'FAILED') {
+        throw new BusinessRuleError(
+          'PAYMENT_GATEWAY_UNAVAILABLE',
+          'Payment could not be started. Please try again.',
+        );
+      }
+      if (payment.checkout) {
+        return {
+          paymentId,
+          provider: this.provider.name,
+          amountPaise: payment.amount_paise,
+          payBy,
+          checkout: payment.checkout as Record<string, unknown>,
+        };
+      }
+    }
+    throw new ServiceUnavailableError(
+      'PAYMENT_STARTING',
+      'Payment is being started. Please try again in a moment.',
+      2,
+    );
   }
 
   /** Entry point for gateway webhooks (raw bytes, as received). */

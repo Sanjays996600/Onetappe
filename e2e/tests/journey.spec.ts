@@ -1,4 +1,6 @@
 import { randomInt } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { tomorrowAt } from '../harness/booking.js';
 import { otpFor } from '../harness/otp.js';
@@ -139,4 +141,28 @@ test('a customer books, pays and follows the visit while the professional does t
   await worker.getByRole('button', { name: 'Home' }).click();
   await worker.getByRole('button', { name: 'Earnings' }).click();
   await expect(worker.getByText(s.world.service.name).first()).toBeVisible();
+
+  // Nothing personal or secret from this journey reached the service logs. (The local
+  // console OTP provider prints codes by design; production refuses that provider.)
+  const logs = ['api.log', 'worker.log']
+    .map((file) => readFileSync(path.join(path.dirname(s.apiLog), file), 'utf8'))
+    .join('\n')
+    .split('\n')
+    .filter((line) => !line.includes('console provider, local only'))
+    .join('\n');
+  const leaks = {
+    customerPhone: customerPhone.slice(3),
+    workerPhone: workerPhone.slice(3),
+    name: 'Priya',
+    house: 'C-101',
+    latitude: String(s.world.center.lat),
+    longitude: String(s.world.center.lng),
+    startCode: `"${code}"`,
+    bearer: 'Bearer ',
+    jwt: 'eyJhbGciOi',
+  };
+  for (const [what, needle] of Object.entries(leaks))
+    expect({ what, found: logs.includes(needle) }).toEqual({ what, found: false });
+  // Every request line carries a request id for debugging instead.
+  expect(logs).toMatch(/"requestId":"[0-9a-f-]{36}".*"route":"\/api\/v1\/customer\/bookings"/);
 });

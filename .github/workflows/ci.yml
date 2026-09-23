@@ -145,6 +145,10 @@ jobs:
           sudo systemctl stop clamav-daemon clamav-freshclam || true
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @onetappe/api test
+      - name: Restore drill (dump the test database, restore it, verify data and protections)
+        run: |
+          sudo apt-get install -y -q postgresql-client-16
+          scripts/restore-drill.sh "$TEST_DATABASE_URL"
 
   e2e:
     # The whole system in a real browser: API + background worker + admin panel, built as
