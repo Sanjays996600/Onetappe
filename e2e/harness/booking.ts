@@ -46,6 +46,14 @@ export async function paidBooking(s: StackState, hour: number) {
     code,
   });
   const token = session['accessToken'] as string;
+  const consents = await http(s, 'GET', '/me/consents', undefined, token);
+  await http(
+    s,
+    'POST',
+    '/me/consents/accept',
+    { documentIds: (consents['required'] as Json[]).map((d) => d['id']) },
+    token,
+  );
   await http(s, 'PATCH', '/customer/me', { fullName: 'Priya Sharma' }, token);
   const address = await http(
     s,

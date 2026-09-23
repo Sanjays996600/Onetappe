@@ -178,7 +178,7 @@ function StartCode({ bookingId, onError }: { bookingId: string; onError: (p: Pro
       <Heading>{t.startCodeTitle}</Heading>
       <Body>{t.startCodeGuidance}</Body>
       {code ? (
-        <Title>{code.split('').join(' ')}</Title>
+        <Title testID="start-code">{code.split('').join(' ')}</Title>
       ) : (
         <Button
           label={t.showStartCode}

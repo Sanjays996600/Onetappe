@@ -1,8 +1,9 @@
 # One Tappe — System matrix
 
 Verified against the code and tests on 23 Sep 2026: branch
-`claude/appointment-booking-app-design-tqp3ip`, migrations 0001–0024, 23 API test files
-and 247 tests passing, and CI plus the Security workflow green.
+`claude/appointment-booking-app-design-tqp3ip`, migrations 0001–0024, 25 API test files
+and 256 tests passing, 7 browser tests (admin panel, and the customer and worker apps'
+web builds) passing, and CI plus the Security workflow green.
 
 **Status:**
 
@@ -103,11 +104,11 @@ and 247 tests passing, and CI plus the Security workflow green.
 
 ## Location
 
-| Component                                              | Status      | Must be done                             | Evidence / what remains                                                                                                      |
-| ------------------------------------------------------ | ----------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Address coordinates, radius and pincode serviceability | COMPLETE    | —                                        | The API takes coordinates from the app                                                                                       |
-| Maps / geocoding in the apps (pin, address search)     | NOT STARTED | **Decision before UI**                   | Choose the provider (Google Maps Platform or Mappls). It is a client SDK; no backend change needed                           |
-| Live worker location and ETA for the customer          | NOT STARTED | Before production, if promised at launch | Status-based tracking (en route, arrived) works today. Live GPS needs the maps decision plus worker-tracking consent (built) |
+| Component                                              | Status      | Must be done                             | Evidence / what remains                                                                                                                                                  |
+| ------------------------------------------------------ | ----------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Address coordinates, radius and pincode serviceability | COMPLETE    | —                                        | The API takes coordinates from the app                                                                                                                                   |
+| Maps / geocoding in the apps (pin, address search)     | PARTIAL     | Before production                        | Google Maps Platform (decided). GPS, reverse geocoding, pincode lookup and a map pin are built; keys come from build secrets, restricted per app. Not yet run on devices |
+| Live worker location and ETA for the customer          | NOT STARTED | Before production, if promised at launch | Status-based tracking (en route, arrived) is built in both apps and browser-tested. Live GPS needs a small backend addition plus the worker-tracking consent (built)     |
 
 ## Platform, security and operations
 
@@ -134,18 +135,19 @@ and 247 tests passing, and CI plus the Security workflow green.
 
 ## Applications
 
-| Component    | Status      | Must be done | Notes                                                                                                                                                                                                                                                                                                      |
-| ------------ | ----------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Customer app | NOT STARTED | Next         | Vertical slice next. Tokens in the Keychain / Keystore; SalesIQ SDK; maps SDK once chosen                                                                                                                                                                                                                  |
-| Worker app   | NOT STARTED | Next         | Same slice; retry-safe job steps are ready                                                                                                                                                                                                                                                                 |
-| Admin panel  | PARTIAL     | Next         | Built and browser-tested (`e2e/tests/admin.spec.ts`): sign-in with an authenticator, invitations, the live board, booking search, detail and trace, versioned actions, staff management and system status. Still to build: support, safety, refunds, worker verification, customers, configuration screens |
+| Component    | Status  | Must be done | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------ | ------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Customer app | PARTIAL | Next         | React Native + Expo. Built and browser-tested end to end on its web build (`e2e/tests/journey.spec.ts`): sign-in, terms, location and address, catalog, tasks, slot or as soon as possible, price, booking, payment (sandbox; Razorpay checkout on phones), live status, start code, timer, rating, invoice, cancel, SOS, support. Still to do: Android/iOS builds on devices (EAS), Razorpay checkout verified on a device, push registration, reschedule screen, managing several addresses, SalesIQ chat |
+| Worker app   | PARTIAL | Next         | React Native + Expo. Built and browser-tested in the same journey: sign-in, terms, application status, online switch, offers with countdown, accept, on the way, arrived, start code (wrong code refused), complete, earnings, SOS on every screen. Still to do: self-service onboarding (personal details form, KYC document upload, training), push for offers, device builds                                                                                                                             |
+| Admin panel  | PARTIAL | Next         | Built and browser-tested (`e2e/tests/admin.spec.ts`): sign-in with an authenticator, invitations, the live board, booking search, detail and trace, versioned actions, staff management and system status. Still to build: support, safety, refunds, worker verification, customers, configuration screens                                                                                                                                                                                                  |
 
-## What is left before the UI slice
+## What is left
 
-Backend code: nothing blocks it. Two decisions and one admin action remain:
-
-1. **GitHub:** create `main` and apply the ruleset ([09](09-github-controls.md)), so UI
-   work arrives through reviewed pull requests.
-2. **Maps provider** for the location screen (Google Maps Platform or Mappls).
-3. **Live tracking at launch or not.** Status-based tracking is ready; live GPS needs item
-   2 and a small backend addition.
+1. **GitHub:** create `main` and apply the ruleset ([09](09-github-controls.md)), so work
+   arrives through reviewed pull requests.
+2. **Devices:** Android and iOS builds (EAS) with the company's Google Maps keys and the
+   Razorpay test key, then run the journey on real phones.
+3. **Live tracking at launch or not.** Status-based tracking is built; live GPS needs a
+   small backend addition.
+4. The PARTIAL and NOT STARTED rows above (payouts, SOS paging, provider live
+   verification, infrastructure, remaining admin screens, worker onboarding screens).

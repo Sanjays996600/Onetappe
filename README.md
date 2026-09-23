@@ -21,6 +21,9 @@ Launching in Noida with **HH60 House Help**; services, areas and prices are conf
 ```
 apps/api          NestJS API, SQL migrations, integration tests
 apps/admin        Operations panel (Next.js; server-side session, no tokens in the browser)
+apps/customer     Customer app (React Native + Expo)
+apps/worker       Worker (partner) app (React Native + Expo)
+packages/mobile-kit  Components, copy and helpers shared by the two phone apps
 packages/api-client  Typed API client shared by the admin panel and the mobile apps
 e2e               Browser tests of the whole system (Playwright)
 packages/domain   Booking state machine, pricing and capacity rules (no framework code)
@@ -84,7 +87,11 @@ accounts are invited from the admin panel.
 
 - a fresh `onetappe_e2e` database;
 - the API and background worker from `apps/api/dist`;
-- the admin panel from its production build.
+- the admin panel from its production build;
+- the web builds of the customer and worker apps, built against that API (the web build
+  exists for these tests; the apps ship on Android and iOS).
+
+`E2E_SKIP_APP_BUILD=1` reuses the existing app builds while iterating on tests.
 
 Build first, then run:
 

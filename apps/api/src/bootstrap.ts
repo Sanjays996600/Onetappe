@@ -55,7 +55,14 @@ export function configureApp(
   const origins = env.CORS_ORIGINS.split(',')
     .map((o) => o.trim())
     .filter(Boolean);
-  if (origins.length > 0) app.enableCors({ origin: origins, credentials: false });
+  // Browsers may read the request id (shown to people as a support reference).
+  if (origins.length > 0)
+    app.enableCors({
+      origin: origins,
+      credentials: false,
+      methods: ['GET', 'HEAD', 'POST', 'PATCH', 'PUT', 'DELETE'],
+      exposedHeaders: ['x-request-id', 'retry-after'],
+    });
   app.enableShutdownHooks();
 }
 

@@ -5,15 +5,20 @@ import path from 'node:path';
 import pg from 'pg';
 import { LOG_DIR, ROOT, STATE_FILE } from './paths.js';
 import type { StackState } from './state.js';
+import { serveStatic } from './static-server.js';
 
 /**
  * Starts the real system for the browser tests: a fresh PostgreSQL database (migrated, with
  * the least-privilege runtime login), the API and background worker as built for
- * production (local providers: console OTP, sandbox gateway), and the admin panel.
+ * production (local providers: console OTP, sandbox gateway), the admin panel, and the
+ * web builds of the customer and worker apps (built against this API; set
+ * E2E_SKIP_APP_BUILD=1 to reuse existing builds while iterating on tests).
  */
 
 const API_PORT = Number(process.env['E2E_API_PORT'] ?? 3100);
 const ADMIN_PORT = Number(process.env['E2E_ADMIN_PORT'] ?? 3101);
+const CUSTOMER_PORT = ADMIN_PORT + 1;
+const WORKER_PORT = ADMIN_PORT + 2;
 const OWNER_URL =
   process.env['E2E_OWNER_URL'] ?? 'postgres://onetappe:onetappe@localhost:5432/onetappe_e2e';
 const RUNTIME_USER = 'onetappe_api_e2e';
@@ -85,6 +90,15 @@ function bootstrapSuperAdmin(runtimeUrl: string) {
   return { email, invitationToken: token };
 }
 
+function buildApp(app: 'customer' | 'worker', apiUrl: string) {
+  if (process.env['E2E_SKIP_APP_BUILD'] === '1') return;
+  execFileSync('pnpm', ['--filter', `@onetappe/${app}`, 'run', 'build:web'], {
+    cwd: ROOT,
+    env: { ...process.env, ONETAPPE_API_URL: apiUrl },
+    stdio: 'inherit',
+  });
+}
+
 function start(name: string, command: string, args: string[], env: NodeJS.ProcessEnv, cwd = ROOT) {
   mkdirSync(LOG_DIR, { recursive: true });
   const logFile = path.join(LOG_DIR, `${name}.log`);
@@ -121,6 +135,10 @@ export default async function globalSetup() {
   const superAdmin = bootstrapSuperAdmin(runtimeUrl);
   const bffSecret = secret();
   const apiUrl = `http://127.0.0.1:${API_PORT}/api/v1`;
+  const customerUrl = `http://127.0.0.1:${String(CUSTOMER_PORT)}`;
+  const workerUrl = `http://127.0.0.1:${String(WORKER_PORT)}`;
+  buildApp('customer', apiUrl);
+  buildApp('worker', apiUrl);
   const apiEnv = {
     APP_ENV: 'local',
     NODE_ENV: 'production',
@@ -141,7 +159,7 @@ export default async function globalSetup() {
     SMS_PROVIDER: 'log',
     WHATSAPP_PROVIDER: 'log',
     EMAIL_PROVIDER: 'log',
-    CORS_ORIGINS: process.env['E2E_CORS_ORIGINS'] ?? '',
+    CORS_ORIGINS: `${customerUrl},${workerUrl}`,
     LOG_LEVEL: 'info',
     WORKER_METRICS_PORT: String(API_PORT + 50),
   };
@@ -168,10 +186,16 @@ export default async function globalSetup() {
   await waitFor(`${apiUrl}/health/ready`, 'API', api.child);
   await waitFor(`http://127.0.0.1:${API_PORT + 50}/health/live`, 'worker', worker.child);
   await waitFor(`http://127.0.0.1:${ADMIN_PORT}/health`, 'admin', admin.child);
+  const apps = await Promise.all([
+    serveStatic(path.join(ROOT, 'apps/customer/dist-web'), CUSTOMER_PORT),
+    serveStatic(path.join(ROOT, 'apps/worker/dist-web'), WORKER_PORT),
+  ]);
 
   const state: StackState = {
     apiUrl,
     adminUrl: `http://127.0.0.1:${ADMIN_PORT}`,
+    customerUrl,
+    workerUrl,
     apiLog: api.logFile,
     superAdmin,
     world,
@@ -180,6 +204,7 @@ export default async function globalSetup() {
   writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 
   return () => {
+    for (const server of apps) server.close();
     for (const p of [admin.child, worker.child, api.child]) p.kill('SIGTERM');
   };
 }

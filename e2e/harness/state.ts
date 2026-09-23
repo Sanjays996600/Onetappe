@@ -5,6 +5,8 @@ import { STATE_FILE } from './paths.js';
 export interface StackState {
   readonly apiUrl: string;
   readonly adminUrl: string;
+  readonly customerUrl: string;
+  readonly workerUrl: string;
   readonly apiLog: string;
   readonly superAdmin: { readonly email: string; readonly invitationToken: string };
   readonly world: {

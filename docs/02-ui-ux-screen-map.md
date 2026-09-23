@@ -1,7 +1,8 @@
 # One Tappe — UI/UX Screen Map
 
-Status: **v0.2 — aligned with the approved V1 flows**. Screens are built after the API they
-depend on is stable (see `01-system-design.md` §9). Screen IDs are used in tickets, designs and
+Status: **v0.3 — the HH60 journey is built** in all three apps and browser-tested end to
+end (`e2e/tests/journey.spec.ts`, `e2e/tests/admin.spec.ts`); what remains per app is in
+[10-system-matrix.md](10-system-matrix.md). Screen IDs are used in tickets, designs and
 tests. Every screen exists in **English and Hindi**.
 
 ---

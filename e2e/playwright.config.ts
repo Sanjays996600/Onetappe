@@ -1,8 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Browser tests of the whole system: API + background worker + admin panel (and, later,
- * the web builds of the customer and worker apps) against a fresh PostgreSQL database.
+ * Browser tests of the whole system: API + background worker + admin panel and the web
+ * builds of the customer and worker apps, against a fresh PostgreSQL database.
  * `E2E_CHROMIUM_PATH` points at a preinstalled Chromium when the Playwright download is
  * not available (sandboxes); CI installs the matching browser.
  */

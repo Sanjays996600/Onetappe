@@ -280,7 +280,7 @@ function OfferCard({
             busy={busy}
             disabled={left === 0}
             onPress={() => void act(() => api.worker.accept(offer.offerId), onAccepted)}
-            testID={`accept-${offer.offerId}`}
+            testID={`accept-${offer.bookingId}`}
           />
           <Button kind="secondary" label={t.rejectJob} onPress={() => setRejecting(true)} />
         </>
