@@ -1,7 +1,12 @@
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { DataCipher, hmacSha256Hex, safeEqual } from '../security/crypto.js';
-import type { DocumentStorage, StoredDocument, UploadTarget } from './document-storage.js';
+import {
+  UPLOAD_TTL_SECONDS,
+  type DocumentStorage,
+  type ObjectInfo,
+  type UploadTarget,
+} from './document-storage.js';
 
 interface UploadClaims {
   readonly key: string;
@@ -10,14 +15,15 @@ interface UploadClaims {
   readonly exp: number;
 }
 
-const UPLOAD_TTL_SECONDS = 10 * 60;
 const SAFE_KEY = /^[a-z0-9][a-z0-9/_-]{8,200}$/;
 
 /**
- * Encrypted files on local disk, for local/test/staging. Upload links are HMAC-signed,
- * expire after ten minutes and are bound to one key, content type and size limit.
+ * Encrypted files on local disk, for local development and tests only (production uses
+ * S3). Upload links are HMAC-signed, expire after five minutes and are bound to one key,
+ * content type and size limit; a link can write its file only once.
  */
 export class LocalDocumentStorage implements DocumentStorage {
+  readonly name = 'local';
   private readonly cipher: DataCipher;
   private readonly signingKey: string;
 
@@ -41,6 +47,7 @@ export class LocalDocumentStorage implements DocumentStorage {
       method: 'PUT',
       url: `${this.publicApiUrl.replace(/\/$/, '')}/api/v1/uploads?token=${encodeURIComponent(token)}`,
       headers: { 'content-type': 'application/octet-stream' },
+      fields: {},
       expiresAt: new Date(exp * 1000),
       maxBytes,
     });
@@ -55,35 +62,31 @@ export class LocalDocumentStorage implements DocumentStorage {
     return claims.exp * 1000 > Date.now() ? claims : null;
   }
 
-  async store(key: string, contentType: string, bytes: Buffer): Promise<void> {
+  async store(key: string, bytes: Buffer): Promise<void> {
     assertSafeKey(key);
     const file = this.fileFor(key);
     await mkdir(path.dirname(file), { recursive: true });
-    const meta = Buffer.from(JSON.stringify({ contentType }));
-    const header = Buffer.alloc(4);
-    header.writeUInt32BE(meta.length);
     // flag 'wx': an upload link can only ever write its file once.
-    await writeFile(file, this.cipher.encryptBytes(Buffer.concat([header, meta, bytes])), {
-      flag: 'wx',
-    });
+    await writeFile(file, this.cipher.encryptBytes(bytes), { flag: 'wx' });
   }
 
-  async exists(key: string): Promise<boolean> {
+  async head(key: string): Promise<ObjectInfo | null> {
     assertSafeKey(key);
-    return stat(this.fileFor(key)).then(
+    const exists = await stat(this.fileFor(key)).then(
       () => true,
       () => false,
     );
+    return exists ? { size: (await this.read(key)).length } : null;
   }
 
-  async read(key: string): Promise<StoredDocument> {
+  async read(key: string): Promise<Buffer> {
     assertSafeKey(key);
-    const plain = this.cipher.decryptBytes(await readFile(this.fileFor(key)));
-    const metaLength = plain.readUInt32BE(0);
-    const meta = JSON.parse(plain.subarray(4, 4 + metaLength).toString('utf8')) as {
-      contentType: string;
-    };
-    return { bytes: plain.subarray(4 + metaLength), contentType: meta.contentType };
+    return this.cipher.decryptBytes(await readFile(this.fileFor(key)));
+  }
+
+  async delete(key: string): Promise<void> {
+    assertSafeKey(key);
+    await rm(this.fileFor(key), { force: true });
   }
 
   private fileFor(key: string): string {

@@ -14,6 +14,7 @@ import { PaymentService } from '../payments/payment.service.js';
 import { RefundService } from '../payments/refund.service.js';
 import { SettlementService } from '../payments/settlement.service.js';
 import { IntegrationDispatcher } from '../integrations/integration-dispatcher.service.js';
+import { DocumentService } from '../storage/document.service.js';
 import type { Metrics } from '../observability/metrics.js';
 import { METRICS } from '../observability/observability.tokens.js';
 import { RequestContext } from '../observability/request-context.js';
@@ -29,6 +30,8 @@ export const JOB_NAMES = [
   'settle-bookings',
   'deliver-integration-events',
   'pull-zoho-desk-updates',
+  'scan-documents',
+  'purge-documents',
 ] as const;
 
 export type JobName = (typeof JOB_NAMES)[number];
@@ -68,6 +71,7 @@ export class JobRunner implements OnApplicationShutdown {
     refunds: RefundService,
     settlement: SettlementService,
     integrations: IntegrationDispatcher,
+    documents: DocumentService,
     @Inject(METRICS) private readonly metrics: Metrics,
   ) {
     this.jobs = {
@@ -154,6 +158,15 @@ export class JobRunner implements OnApplicationShutdown {
         // Safety net for missed Desk webhooks; bounded to respect Zoho API credits.
         intervalMs: 10 * 60_000,
         run: (id) => integrations.schedulePulls(id),
+      },
+      'scan-documents': {
+        intervalMs: 30_000,
+        run: (id) => documents.scanPending(id),
+      },
+      'purge-documents': {
+        // Abandoned uploads and documents past their retention date.
+        intervalMs: 60 * 60_000,
+        run: (id) => documents.purge(id),
       },
     };
   }

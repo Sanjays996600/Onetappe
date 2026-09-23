@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { selectRule, type BookingStatus, type IsoWeekday } from '@onetappe/domain';
 import { sql, type Kysely } from 'kysely';
@@ -12,12 +11,7 @@ import type { ActionContext } from '../database/action-context.js';
 import { DATABASE } from '../database/database.module.js';
 import type { DB } from '../database/db.generated.js';
 import { inTransaction, type Queryable } from '../database/transaction.js';
-import {
-  ALLOWED_DOCUMENT_TYPES,
-  DOCUMENT_STORAGE,
-  MAX_DOCUMENT_BYTES,
-  type DocumentStorage,
-} from '../storage/document-storage.js';
+import { DocumentService } from '../storage/document.service.js';
 import { WORKER_UPLOADED_TYPES, WorkerOnboardingService } from './worker-onboarding.service.js';
 
 const WORKING_STATUSES = ['ACTIVE', 'RESTRICTED'];
@@ -56,7 +50,7 @@ export interface WorkerProfileInput {
 export class WorkerService {
   constructor(
     @Inject(DATABASE) private readonly db: Kysely<DB>,
-    @Inject(DOCUMENT_STORAGE) private readonly storage: DocumentStorage,
+    private readonly documents: DocumentService,
     private readonly onboarding: WorkerOnboardingService,
   ) {}
 
@@ -208,7 +202,7 @@ export class WorkerService {
     return this.profile(workerId);
   }
 
-  /** Step 1 of a document upload: an upload link for one file. */
+  /** Step 1 of a document upload: a private, short-lived upload target for one file. */
   async documentUploadTarget(
     context: ActionContext,
     verificationType: string,
@@ -221,25 +215,36 @@ export class WorkerService {
         'This check is recorded by One Tappe staff, not uploaded',
       );
     }
-    if (!(ALLOWED_DOCUMENT_TYPES as readonly string[]).includes(contentType)) {
-      throw new ValidationError('FILE_TYPE_INVALID', 'Upload a JPEG, PNG or PDF');
-    }
-    const key = `workers/${workerId}/${verificationType.toLowerCase()}/${randomUUID()}`;
-    const target = await this.storage.createUploadTarget(key, contentType, MAX_DOCUMENT_BYTES);
-    return { documentKey: key, upload: { ...target, expiresAt: target.expiresAt.toISOString() } };
+    const { documentId, upload } = await this.documents.createUpload(
+      context,
+      workerId,
+      'WORKER_VERIFICATION',
+      `workers/${workerId}/${verificationType.toLowerCase()}`,
+      contentType,
+    );
+    return { documentId, upload: { ...upload, expiresAt: upload.expiresAt.toISOString() } };
   }
 
-  /** Step 2: submit the uploaded file for verification. */
+  /** Step 2: submit the uploaded file for verification (checked, then malware-scanned). */
   async submitVerification(
     context: ActionContext,
-    input: { verificationType: string; documentKey: string; referenceLast4: string | null },
+    input: { verificationType: string; documentId: string; referenceLast4: string | null },
   ) {
     const workerId = requireActor(context);
-    const prefix = `workers/${workerId}/${input.verificationType.toLowerCase()}/`;
-    if (!input.documentKey.startsWith(prefix))
-      throw new ForbiddenError('DOCUMENT_NOT_YOURS', 'Unknown document');
-    if (!(await this.storage.exists(input.documentKey))) {
-      throw new ValidationError('DOCUMENT_NOT_UPLOADED', 'Upload the file before submitting it');
+    if (!(WORKER_UPLOADED_TYPES as readonly string[]).includes(input.verificationType)) {
+      throw new ValidationError('DOCUMENT_TYPE_INVALID', 'Unknown verification type');
+    }
+    const { objectKey } = await this.documents.confirmUpload(
+      context,
+      input.documentId,
+      workerId,
+      'WORKER_VERIFICATION',
+    );
+    if (!objectKey.startsWith(`workers/${workerId}/${input.verificationType.toLowerCase()}/`)) {
+      throw new ForbiddenError(
+        'DOCUMENT_NOT_FOR_THIS_CHECK',
+        'This file was uploaded for another check',
+      );
     }
     await inTransaction(this.db, context, async (tx) => {
       await tx
@@ -250,7 +255,8 @@ export class WorkerService {
           status: 'SUBMITTED',
           method: 'DOCUMENT_UPLOAD',
           reference_masked: input.referenceLast4,
-          document_object_key: input.documentKey,
+          document_object_key: objectKey,
+          document_id: input.documentId,
           submitted_at: new Date(),
         })
         .execute();

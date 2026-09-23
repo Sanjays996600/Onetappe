@@ -39,7 +39,7 @@ export class UploadController {
     if (body.length > claims.maxBytes)
       throw new ValidationError('UPLOAD_TOO_LARGE', 'The file is too large');
     try {
-      await this.storage.store(claims.key, claims.contentType, body);
+      await this.storage.store(claims.key, body);
     } catch {
       throw new ValidationError('UPLOAD_ALREADY_USED', 'This upload link has already been used');
     }

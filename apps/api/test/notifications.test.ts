@@ -311,6 +311,9 @@ describe('provider configuration rules', () => {
     MSG91_AUTH_KEY: 'k',
     MSG91_TEMPLATE_ID: 't',
     METRICS_TOKEN: 'metrics-token-0123456789-abcdefghijkl',
+    STORAGE_PROVIDER: 's3',
+    S3_BUCKET: 'onetappe-staging-documents',
+    MALWARE_SCANNER: 'clamav',
   };
 
   it('refuses the log provider outside local/test (it would mark messages sent without sending)', () => {
@@ -348,5 +351,41 @@ describe('provider configuration rules', () => {
         WHATSAPP_PROVIDER: 'none',
       }),
     ).not.toThrow();
+  });
+});
+
+describe('document storage configuration rules', () => {
+  const base = {
+    ...process.env,
+    APP_ENV: 'staging',
+    OTP_PROVIDER: 'msg91',
+    MSG91_AUTH_KEY: 'k',
+    MSG91_TEMPLATE_ID: 't',
+    METRICS_TOKEN: 'metrics-token-0123456789-abcdefghijkl',
+    PUSH_PROVIDER: 'none',
+    SMS_PROVIDER: 'none',
+    EMAIL_PROVIDER: 'none',
+    WHATSAPP_PROVIDER: 'none',
+  };
+
+  it('outside local/test, documents must go to S3 and be scanned', () => {
+    expect(() =>
+      loadEnv({ ...base, STORAGE_PROVIDER: 'local', MALWARE_SCANNER: 'clamav' }),
+    ).toThrow(/must use STORAGE_PROVIDER=s3/);
+    expect(() =>
+      loadEnv({ ...base, STORAGE_PROVIDER: 's3', S3_BUCKET: 'b', MALWARE_SCANNER: 'none' }),
+    ).toThrow(/must use MALWARE_SCANNER=clamav/);
+  });
+
+  it('production also requires a customer-managed KMS key', () => {
+    expect(() =>
+      loadEnv({
+        ...base,
+        APP_ENV: 'production',
+        STORAGE_PROVIDER: 's3',
+        S3_BUCKET: 'b',
+        MALWARE_SCANNER: 'clamav',
+      }),
+    ).toThrow(/S3_KMS_KEY_ID/);
   });
 });

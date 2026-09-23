@@ -88,9 +88,21 @@ const EnvSchema = z
     EMAIL_FROM_ADDRESS: z.email().optional(),
     EMAIL_FROM_NAME: z.string().default('One Tappe'),
 
-    /** Worker documents. `local` = encrypted files on this server (not for production). */
-    STORAGE_PROVIDER: z.enum(['local']).default('local'),
+    /**
+     * Worker documents. `s3` = private company bucket (production); `local` = encrypted
+     * files on this machine (local development and tests only).
+     */
+    STORAGE_PROVIDER: z.enum(['local', 's3']).default('local'),
     STORAGE_DIR: z.string().default('.storage'),
+    S3_BUCKET: z.string().optional(),
+    S3_REGION: z.string().default('ap-south-1'),
+    /** Only for S3-compatible test servers; unset for AWS. */
+    S3_ENDPOINT: z.url().optional(),
+    S3_KMS_KEY_ID: z.string().optional(),
+    /** Malware scanning of uploads: `clamav` (clamd over TCP) or `none` (local/test only). */
+    MALWARE_SCANNER: z.enum(['none', 'clamav']).default('none'),
+    CLAMAV_HOST: z.string().default('127.0.0.1'),
+    CLAMAV_PORT: z.coerce.number().int().min(1).max(65_535).default(3310),
     /** Public base URL of this API, used to build upload links for the local storage provider. */
     PUBLIC_API_URL: z.url().default('http://localhost:3000'),
 
@@ -119,12 +131,16 @@ const EnvSchema = z
       fail(`${env.APP_ENV} must not use live Razorpay keys`);
     }
 
-    if (env.APP_ENV === 'production') {
-      // Only the local provider exists today; production needs managed object storage
-      // (e.g. S3 with presigned uploads) behind the DocumentStorage interface first.
-      fail(
-        `production needs managed object storage for worker documents (STORAGE_PROVIDER=${env.STORAGE_PROVIDER} is local only)`,
-      );
+    if (!['local', 'test'].includes(env.APP_ENV)) {
+      // Identity documents never sit on an app server disk, and never go unscanned.
+      if (env.STORAGE_PROVIDER !== 's3') fail(`${env.APP_ENV} must use STORAGE_PROVIDER=s3`);
+      if (env.MALWARE_SCANNER !== 'clamav') fail(`${env.APP_ENV} must use MALWARE_SCANNER=clamav`);
+      if (env.S3_ENDPOINT) fail('S3_ENDPOINT is only for local S3-compatible test servers');
+    }
+    if (env.STORAGE_PROVIDER === 's3' && !env.S3_BUCKET)
+      fail('S3_BUCKET is required for s3 storage');
+    if (env.APP_ENV === 'production' && !env.S3_KMS_KEY_ID) {
+      fail('production must encrypt documents with a customer-managed KMS key (S3_KMS_KEY_ID)');
     }
 
     if (env.OTP_PROVIDER === 'test' && env.APP_ENV !== 'test') {

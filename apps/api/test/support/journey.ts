@@ -63,6 +63,12 @@ async function operationsToken(api: ApiClient, ops: StaffMember): Promise<string
   return token;
 }
 
+/** The smallest valid JPEG header followed by filler: passes the byte-level type check. */
+export const TEST_JPEG = Buffer.concat([
+  Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00]),
+  Buffer.from('test image content'),
+]);
+
 export interface OnboardedWorker {
   readonly session: PhoneSession;
   readonly workerId: string;
@@ -107,7 +113,7 @@ export async function onboardWorkerViaApi(
     }),
   );
 
-  const upload = await worker.post<{ documentKey: string; upload: { url: string } }>(
+  const upload = await worker.post<{ documentId: string; upload: { url: string } }>(
     '/worker/me/documents',
     { verificationType: 'IDENTITY', contentType: 'image/jpeg' },
   );
@@ -116,17 +122,19 @@ export async function onboardWorkerViaApi(
     method: 'PUT',
     url: `${new URL(upload.body.upload.url).pathname}${new URL(upload.body.upload.url).search}`,
     headers: { 'content-type': 'application/octet-stream' },
-    payload: Buffer.from('fake-jpeg-bytes-for-test'),
+    payload: TEST_JPEG,
   });
   if (put.statusCode !== 204) throw new Error(`Document upload failed: ${put.body}`);
   expect200(
     'submit',
     await worker.post('/worker/me/verifications', {
       verificationType: 'IDENTITY',
-      documentKey: upload.body.documentKey,
+      documentId: upload.body.documentId,
       referenceLast4: '1234',
     }),
   );
+  // Staff can only accept a document once it has passed the malware scan.
+  await runJob(app, 'scan-documents');
 
   const opsToken = await operationsToken(api, ops);
   const staff = api.as(opsToken);

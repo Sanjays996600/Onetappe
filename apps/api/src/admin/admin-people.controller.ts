@@ -156,6 +156,9 @@ export class AdminPeopleController {
   @Post('workers/:id/verifications/:verificationId/document')
   @HttpCode(200)
   @Header('cache-control', 'no-store')
+  // Served as an inert download: never rendered or sniffed as active content.
+  @Header('x-content-type-options', 'nosniff')
+  @Header('content-security-policy', "default-src 'none'; sandbox")
   @RequirePermissions('worker.documents.view')
   async document(
     @Actor() actor: ActionContext,
@@ -164,7 +167,10 @@ export class AdminPeopleController {
     @Body(new ZodPipe(ReasonBody)) body: z.infer<typeof ReasonBody>,
   ) {
     const file = await this.people.document(actor, id, verificationId, body.reason);
-    return new StreamableFile(file.bytes, { type: file.contentType, disposition: 'inline' });
+    return new StreamableFile(file.bytes, {
+      type: file.contentType,
+      disposition: `attachment; filename="document-${verificationId}"`,
+    });
   }
 
   @Post('workers/:id/verifications/:verificationId/decision')

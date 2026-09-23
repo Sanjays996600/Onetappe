@@ -58,7 +58,7 @@ const UploadBody = z
 const SubmitBody = z
   .object({
     verificationType: z.enum(WORKER_UPLOADED_TYPES),
-    documentKey: z.string().min(10).max(250),
+    documentId: z.uuid(),
     // Never a full ID number: last characters only.
     referenceLast4: z
       .string()

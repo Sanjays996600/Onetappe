@@ -838,6 +838,27 @@ export interface StaffLoginChallenge {
   user_id: string;
 }
 
+export interface StoredDocument {
+  created_at: Generated<Timestamp>;
+  declared_content_type: string;
+  deleted_at: Timestamp | null;
+  deleted_reason: string | null;
+  detected_content_type: string | null;
+  id: Generated<string>;
+  object_key: string;
+  owner_user_id: string;
+  purpose: string;
+  rejection_reason: string | null;
+  retain_until: Timestamp | null;
+  scan_engine: string | null;
+  scan_signature: string | null;
+  scanned_at: Timestamp | null;
+  sha256: string | null;
+  size_bytes: number | null;
+  status: Generated<string>;
+  upload_confirmed_at: Timestamp | null;
+}
+
 export interface SupportCase {
   booking_id: string | null;
   case_code: Generated<string>;
@@ -1098,6 +1119,7 @@ export interface WorkerVerification {
   created_at: Generated<Timestamp>;
   decided_at: Timestamp | null;
   decided_by: string | null;
+  document_id: string | null;
   document_object_key: string | null;
   expires_at: Timestamp | null;
   id: Generated<string>;
@@ -1188,6 +1210,7 @@ export interface DB {
   serviceable_locality: ServiceableLocality;
   staff_credential: StaffCredential;
   staff_login_challenge: StaffLoginChallenge;
+  stored_document: StoredDocument;
   support_case: SupportCase;
   support_case_event: SupportCaseEvent;
   tax_rate: TaxRate;

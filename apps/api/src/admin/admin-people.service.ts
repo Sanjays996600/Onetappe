@@ -7,7 +7,7 @@ import type { ActionContext } from '../database/action-context.js';
 import { DATABASE } from '../database/database.module.js';
 import type { DB } from '../database/db.generated.js';
 import { inTransaction } from '../database/transaction.js';
-import { DOCUMENT_STORAGE, type DocumentStorage } from '../storage/document-storage.js';
+import { DocumentService } from '../storage/document.service.js';
 import { WorkerOnboardingService } from '../worker/worker-onboarding.service.js';
 
 export type WorkerDecisionStatus =
@@ -22,7 +22,7 @@ export type WorkerDecisionStatus =
 export class AdminPeopleService {
   constructor(
     @Inject(DATABASE) private readonly db: Kysely<DB>,
-    @Inject(DOCUMENT_STORAGE) private readonly storage: DocumentStorage,
+    private readonly documents: DocumentService,
     private readonly audit: AuditService,
     private readonly onboarding: WorkerOnboardingService,
   ) {}
@@ -264,16 +264,19 @@ export class AdminPeopleService {
     };
   }
 
-  /** Opens an uploaded document. Requires worker.documents.view; always audited. */
+  /**
+   * Opens an uploaded document. Requires worker.documents.view and a reason; only files
+   * that passed malware scanning and still match their checked hash; always audited.
+   */
   async document(context: ActionContext, workerId: string, verificationId: string, reason: string) {
     const v = await this.db
       .selectFrom('worker_verification')
-      .select(['document_object_key', 'verification_type'])
+      .select(['document_id', 'verification_type'])
       .where('id', '=', verificationId)
       .where('worker_id', '=', workerId)
       .executeTakeFirst();
-    if (!v?.document_object_key) throw new NotFoundError('Document', verificationId);
-    const file = await this.storage.read(v.document_object_key);
+    if (!v?.document_id) throw new NotFoundError('Document', verificationId);
+    const file = await this.documents.openClean(v.document_id);
     await this.audit.record(context, {
       action: 'READ',
       entityType: 'worker_document',
@@ -293,7 +296,7 @@ export class AdminPeopleService {
     await inTransaction(this.db, { ...context, reason: input.reason }, async (tx) => {
       const v = await tx
         .selectFrom('worker_verification')
-        .select(['status'])
+        .select(['status', 'document_id'])
         .where('id', '=', verificationId)
         .where('worker_id', '=', workerId)
         .forUpdate()
@@ -301,6 +304,16 @@ export class AdminPeopleService {
       if (!v) throw new NotFoundError('Verification', verificationId);
       if (!['PENDING', 'SUBMITTED', 'IN_REVIEW'].includes(v.status))
         throw new BusinessRuleError('ALREADY_DECIDED', `This check is already ${v.status}`);
+      // A document can only be accepted once it has been scanned and found clean.
+      if (input.decision === 'VERIFIED' && v.document_id) {
+        const status = await this.documents.status(v.document_id);
+        if (status !== 'CLEAN') {
+          throw new BusinessRuleError(
+            'DOCUMENT_NOT_SCANNED',
+            'The document has not passed the malware scan yet',
+          );
+        }
+      }
       await tx
         .updateTable('worker_verification')
         .set({
@@ -421,6 +434,12 @@ export class AdminPeopleService {
           .set({ is_online: false, changed_at: new Date() })
           .where('worker_id', '=', workerId)
           .execute();
+      }
+      // Leaving One Tappe starts the document retention clock; coming back stops it.
+      if (to === 'INACTIVE' || to === 'REJECTED') {
+        await this.documents.scheduleRetention(tx, workerId);
+      } else {
+        await this.documents.cancelRetention(tx, workerId);
       }
     });
     return this.worker(workerId);
