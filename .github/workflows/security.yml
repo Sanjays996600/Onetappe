@@ -60,7 +60,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: New or changed dependencies are free of known vulnerabilities
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
