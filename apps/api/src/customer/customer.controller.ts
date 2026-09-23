@@ -25,6 +25,7 @@ import { SafetyService } from '../support/safety.service.js';
 import { SUPPORT_CATEGORIES, SupportService } from '../support/support.service.js';
 import { DeviceService } from './device.service.js';
 import { CustomerService } from './customer.service.js';
+import { LegalService } from '../legal/legal.service.js';
 
 const phone = z.string().regex(/^\+[1-9]\d{7,14}$/, 'Use international format, e.g. +919876543210');
 const text = (max: number) => z.string().trim().min(1).max(max);
@@ -145,6 +146,7 @@ export class CustomerController {
     private readonly payments: PaymentService,
     private readonly support: SupportService,
     private readonly safety: SafetyService,
+    private readonly legal: LegalService,
   ) {}
 
   // ---- Profile & devices ----
@@ -265,6 +267,7 @@ export class CustomerController {
     @IdempotencyKey() idempotencyKey: string,
     @Body(new ZodPipe(BookingBody)) body: z.infer<typeof BookingBody>,
   ) {
+    await this.legal.assertAccepted(actor.actorUserId ?? '', 'CUSTOMER_APP');
     const created = await this.creation.create(
       {
         customerUserId: actor.actorUserId ?? '',

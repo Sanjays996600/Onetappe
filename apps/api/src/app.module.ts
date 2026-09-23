@@ -4,6 +4,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { BookingModule } from './booking/booking.module.js';
 import { ConfigModule } from './config/config.module.js';
 import { ConfigurationModule } from './configuration/configuration.module.js';
+import { LegalModule } from './legal/legal.module.js';
 import { CustomerModule } from './customer/customer.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthController } from './health/health.controller.js';
@@ -35,6 +36,7 @@ import { WorkerModule } from './worker/worker.module.js';
     WorkerModule,
     AdminModule,
     ConfigurationModule,
+    LegalModule,
     IntegrationsModule,
   ],
   controllers: [HealthController],

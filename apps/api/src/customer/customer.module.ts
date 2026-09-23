@@ -8,9 +8,10 @@ import { SupportModule } from '../support/support.module.js';
 import { CustomerController } from './customer.controller.js';
 import { CustomerService } from './customer.service.js';
 import { DeviceService } from './device.service.js';
+import { LegalModule } from '../legal/legal.module.js';
 
 @Module({
-  imports: [BookingModule, PaymentsModule, SupportModule],
+  imports: [BookingModule, PaymentsModule, SupportModule, LegalModule],
   controllers: [CustomerController],
   providers: [
     CustomerService,

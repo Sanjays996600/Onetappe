@@ -97,7 +97,8 @@ needed against volumetric abuse.
 - Files go straight to a private S3 bucket through a presigned POST. The policy fixes the
   object key, the content type, a size of 1 byte to 5 MB and server-side encryption (KMS
   in production), and the upload window is 5 minutes.
-- The bucket is never public, and the object key does not reveal the worker.
+- The bucket is never public. Object keys contain only ids (`workers/<id>/<check>/<random>`),
+  never names or phone numbers.
 - On submission the API:
   - checks the real file type from its bytes (JPEG, PNG or PDF only; HTML and SVG are
     refused and deleted);

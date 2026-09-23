@@ -22,6 +22,7 @@ import { SAFETY_CATEGORIES, SafetyService } from '../support/safety.service.js';
 import { SUPPORT_CATEGORIES, SupportService } from '../support/support.service.js';
 import { WORKER_UPLOADED_TYPES } from './worker-onboarding.service.js';
 import { WorkerService } from './worker.service.js';
+import { LegalService } from '../legal/legal.service.js';
 
 const text = (max: number) => z.string().trim().min(1).max(max);
 const phone = z.string().regex(/^\+[1-9]\d{7,14}$/);
@@ -111,6 +112,7 @@ export class WorkerController {
     private readonly lifecycle: BookingLifecycleService,
     private readonly support: SupportService,
     private readonly safety: SafetyService,
+    private readonly legal: LegalService,
   ) {}
 
   @Get('me')
@@ -163,10 +165,11 @@ export class WorkerController {
 
   @Post('me/presence')
   @HttpCode(200)
-  presence(
+  async presence(
     @Actor() actor: ActionContext,
     @Body(new ZodPipe(PresenceBody)) body: z.infer<typeof PresenceBody>,
   ) {
+    if (body.online) await this.legal.assertAccepted(actor.actorUserId ?? '', 'WORKER_APP');
     return this.workers.setPresence(actor, body);
   }
 
