@@ -492,6 +492,20 @@ export interface NotificationTemplate {
   version: number;
 }
 
+export interface OperatingHours {
+  close_minute: number;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  id: Generated<string>;
+  open_minute: number;
+  service_id: string | null;
+  updated_at: Generated<Timestamp>;
+  valid_from: Generated<Timestamp>;
+  valid_to: Timestamp | null;
+  weekday: number;
+  zone_id: string;
+}
+
 export interface OtpChallenge {
   attempts: Generated<number>;
   client_app: string;
@@ -1184,6 +1198,7 @@ export interface DB {
   notification: Notification;
   notification_route: NotificationRoute;
   notification_template: NotificationTemplate;
+  operating_hours: OperatingHours;
   otp_challenge: OtpChallenge;
   payment: Payment;
   payment_event: PaymentEvent;

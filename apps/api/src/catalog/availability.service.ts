@@ -69,6 +69,8 @@ export class AvailabilityService {
                          gs + make_interval(mins => ${duration + service.buffer_after_minutes}), '[)') AS blocked
         FROM day, generate_series(day.starts, day.starts + interval '1 day' - ${step}::interval, ${step}::interval) AS gs
         WHERE gs >= ${earliest} AND gs <= ${latest}
+          AND within_operating_hours(${query.location.zoneId}::uuid, ${query.serviceId}::uuid,
+                                     gs, gs + make_interval(mins => ${duration}))
       )
       SELECT slot.start FROM slot
       WHERE EXISTS (

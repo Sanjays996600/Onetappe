@@ -38,6 +38,7 @@ export const PG = {
   DELETE_FORBIDDEN: 'OT006',
   REFUND_EXCEEDS_PAYMENT: 'OT007',
   BUSINESS_RULE: 'OT008',
+  OUTSIDE_OPERATING_HOURS: 'OT009',
 } as const;
 
 /** SQLSTATEs meaning the database could not serve the request right now. */
@@ -110,6 +111,11 @@ export function translateDatabaseError(error: unknown): unknown {
       return new ConflictError('DUPLICATE', 'A record with the same unique value already exists', {
         constraint: error.constraint,
       });
+    case PG.OUTSIDE_OPERATING_HOURS:
+      return new BusinessRuleError(
+        'OUTSIDE_OPERATING_HOURS',
+        'The requested time is outside operating hours. Please choose another time.',
+      );
     case PG.INVALID_TRANSITION:
       return new BusinessRuleError('INVALID_STATUS_TRANSITION', error.message);
     case PG.IMMUTABLE_FIELD:

@@ -14,7 +14,7 @@ import {
 import type { Kysely } from 'kysely';
 import { z } from 'zod';
 import { Actor, ForApp, RequirePermissions, RequireRecentMfa } from '../auth/decorators.js';
-import { NotFoundError } from '../common/errors.js';
+import { NotFoundError, ValidationError } from '../common/errors.js';
 import { ZodPipe } from '../common/http/zod.pipe.js';
 import type { ActionContext } from '../database/action-context.js';
 import { DATABASE } from '../database/database.module.js';
@@ -24,6 +24,7 @@ import { RefundService } from '../payments/refund.service.js';
 import { SAFETY_CATEGORIES, SafetyService } from '../support/safety.service.js';
 import { SUPPORT_STATUSES, SupportService } from '../support/support.service.js';
 import { SystemStatusService } from './system-status.service.js';
+import { SETTING_SCHEMAS, isSettingKey } from '../configuration/settings-registry.js';
 
 const reason = z.string().trim().min(5, 'Give a meaningful reason').max(500);
 const ReasonBody = z.object({ reason }).strict();
@@ -269,6 +270,12 @@ export class AdminOperationsController {
       .execute();
   }
 
+  @Get('settings')
+  @RequirePermissions('settings.manage')
+  settings() {
+    return this.db.selectFrom('business_setting').selectAll().orderBy('key').execute();
+  }
+
   @Put('settings/:key')
   @HttpCode(204)
   @RequirePermissions('settings.manage')
@@ -278,19 +285,23 @@ export class AdminOperationsController {
     @Param('key') key: string,
     @Body(new ZodPipe(SettingBody)) body: z.infer<typeof SettingBody>,
   ) {
-    if (!SETTING_KEY.test(key)) throw new NotFoundError('Setting', key);
+    if (!SETTING_KEY.test(key) || !isSettingKey(key)) throw new NotFoundError('Setting', key);
+    const parsed = SETTING_SCHEMAS[key].safeParse(body.value);
+    if (!parsed.success) {
+      throw new ValidationError('SETTING_INVALID', z.prettifyError(parsed.error));
+    }
     await inTransaction(this.db, { ...actor, reason: body.reason }, (tx) =>
       tx
         .insertInto('business_setting')
         .values({
           key,
-          value: JSON.stringify(body.value),
+          value: JSON.stringify(parsed.data),
           description: body.description,
           updated_by: actor.actorUserId,
         })
         .onConflict((oc) =>
           oc.column('key').doUpdateSet({
-            value: JSON.stringify(body.value),
+            value: JSON.stringify(parsed.data),
             description: body.description,
             updated_by: actor.actorUserId,
           }),
