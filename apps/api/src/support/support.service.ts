@@ -5,7 +5,8 @@ import { BusinessRuleError, NotFoundError, ValidationError } from '../common/err
 import type { ActionContext } from '../database/action-context.js';
 import { DATABASE } from '../database/database.module.js';
 import type { DB } from '../database/db.generated.js';
-import { inTransaction } from '../database/transaction.js';
+import { inTransaction, type Tx } from '../database/transaction.js';
+import { keyReusedError, type IdempotentRequest } from '../common/http/idempotency.js';
 
 export const SUPPORT_CATEGORIES = [
   'SERVICE_QUALITY',
@@ -48,10 +49,22 @@ export class SupportService {
     private readonly clock: Clock,
   ) {}
 
-  async open(context: ActionContext, raisedBy: 'CUSTOMER' | 'WORKER' | 'STAFF', input: NewCase) {
+  /**
+   * Opens a case. With the same idempotency key as an earlier request from the same person,
+   * returns that case (`replayed: true`) instead of opening a second one.
+   */
+  async open(
+    context: ActionContext,
+    raisedBy: 'CUSTOMER' | 'WORKER' | 'STAFF',
+    input: NewCase,
+    idempotency: IdempotentRequest,
+  ) {
     const userId = context.actorUserId;
     if (!userId) throw new ValidationError('ACTOR_REQUIRED', 'Sign in required');
     return inTransaction(this.db, context, async (tx) => {
+      const earlier = await this.findByKey(tx, userId, idempotency);
+      if (earlier) return earlier;
+
       if (input.bookingId) {
         const booking = await tx
           .selectFrom('booking')
@@ -78,9 +91,18 @@ export class SupportService {
           next_update_due_at: new Date(
             this.clock.now().getTime() + FIRST_UPDATE_HOURS[severity] * 3_600_000,
           ),
+          idempotency_key: idempotency.key,
+          request_hash: idempotency.hash,
         })
+        .onConflict((oc) => oc.columns(['raised_by_user_id', 'idempotency_key']).doNothing())
         .returning(['id', 'case_code', 'status', 'next_update_due_at'])
-        .executeTakeFirstOrThrow();
+        .executeTakeFirst();
+      if (!row) {
+        // A simultaneous retry with the same key committed first.
+        const winner = await this.findByKey(tx, userId, idempotency);
+        if (!winner) throw new Error('Idempotent support case vanished');
+        return winner;
+      }
       await tx
         .insertInto('support_case_event')
         .values({
@@ -98,8 +120,27 @@ export class SupportService {
         caseCode: row.case_code,
         status: row.status,
         nextUpdateDueAt: row.next_update_due_at?.toISOString() ?? null,
+        replayed: false,
       };
     });
+  }
+
+  private async findByKey(tx: Tx, userId: string, idempotency: IdempotentRequest) {
+    const row = await tx
+      .selectFrom('support_case')
+      .select(['id', 'case_code', 'status', 'next_update_due_at', 'request_hash'])
+      .where('raised_by_user_id', '=', userId)
+      .where('idempotency_key', '=', idempotency.key)
+      .executeTakeFirst();
+    if (!row) return null;
+    if (row.request_hash !== idempotency.hash) throw keyReusedError();
+    return {
+      id: row.id,
+      caseCode: row.case_code,
+      status: row.status,
+      nextUpdateDueAt: row.next_update_due_at?.toISOString() ?? null,
+      replayed: true,
+    };
   }
 
   async listForRaiser(userId: string) {

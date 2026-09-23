@@ -21,7 +21,12 @@ export interface CreatedOrder {
 }
 
 export type ProviderEventType =
-  'PAYMENT_CAPTURED' | 'PAYMENT_FAILED' | 'REFUND_PROCESSED' | 'REFUND_FAILED' | 'IGNORED';
+  | 'PAYMENT_AUTHORIZED'
+  | 'PAYMENT_CAPTURED'
+  | 'PAYMENT_FAILED'
+  | 'REFUND_PROCESSED'
+  | 'REFUND_FAILED'
+  | 'IGNORED';
 
 /** A gateway notification translated into our terms. */
 export interface ProviderEvent {
@@ -40,7 +45,8 @@ export interface ProviderEvent {
 }
 
 export interface OrderStatus {
-  readonly state: 'PENDING' | 'CAPTURED' | 'FAILED';
+  /** AUTHORIZED: money is held but not yet taken; One Tappe must capture it. */
+  readonly state: 'PENDING' | 'AUTHORIZED' | 'CAPTURED' | 'FAILED';
   readonly providerPaymentId: string | null;
   readonly amountPaise: number | null;
   readonly method: string | null;
@@ -64,6 +70,11 @@ export interface PaymentProvider {
   ): ProviderEvent;
   /** Server-to-server status check, used for reconciliation and "I have paid" refreshes. */
   fetchOrderStatus(providerOrderId: string): Promise<OrderStatus>;
+  /**
+   * Takes an authorized payment. Safe to repeat: if it was already captured, the current
+   * (captured) state is returned instead of an error.
+   */
+  capturePayment(providerPaymentId: string, amountPaise: number): Promise<OrderStatus>;
   /** `reference` is our refund id; the gateway must receive it so retries can be matched. */
   createRefund(
     providerPaymentId: string,

@@ -52,3 +52,15 @@ export class RateLimitedError extends AppError {
 export class UnauthorizedError extends AppError {
   readonly httpStatus = 401;
 }
+
+/**
+ * A dependency (database, gateway) is temporarily unreachable. The client may retry after
+ * `retryAfterSeconds`; creating requests must be retried with the same Idempotency-Key,
+ * because a connection lost during commit leaves the outcome unknown to the server.
+ */
+export class ServiceUnavailableError extends AppError {
+  readonly httpStatus = 503;
+  constructor(code: string, message: string, retryAfterSeconds = 5) {
+    super(code, message, { retryAfterSeconds });
+  }
+}

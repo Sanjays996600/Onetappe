@@ -88,6 +88,7 @@ export class RazorpayProvider implements PaymentProvider {
     const payment = body.payload.payment?.entity;
     const refund = body.payload.refund?.entity;
     const types: Record<string, ProviderEventType> = {
+      'payment.authorized': 'PAYMENT_AUTHORIZED',
       'payment.captured': 'PAYMENT_CAPTURED',
       'order.paid': 'PAYMENT_CAPTURED',
       'payment.failed': 'PAYMENT_FAILED',
@@ -115,15 +116,9 @@ export class RazorpayProvider implements PaymentProvider {
       `/orders/${encodeURIComponent(providerOrderId)}/payments`,
     );
     const captured = items.find((p) => p.status === 'captured');
-    if (captured) {
-      return {
-        state: 'CAPTURED',
-        providerPaymentId: captured.id,
-        amountPaise: captured.amount,
-        method: captured.method ?? null,
-        failureReason: null,
-      };
-    }
+    if (captured) return toOrderStatus(captured);
+    const authorized = items.find((p) => p.status === 'authorized');
+    if (authorized) return toOrderStatus(authorized);
     const failed = items.find((p) => p.status === 'failed');
     if (failed && items.every((p) => p.status === 'failed')) {
       return {
@@ -141,6 +136,23 @@ export class RazorpayProvider implements PaymentProvider {
       method: null,
       failureReason: null,
     };
+  }
+
+  async capturePayment(providerPaymentId: string, amountPaise: number): Promise<OrderStatus> {
+    const path = `/payments/${encodeURIComponent(providerPaymentId)}`;
+    try {
+      return toOrderStatus(
+        await this.call<RzpPayment>('POST', `${path}/capture`, {
+          amount: amountPaise,
+          currency: 'INR',
+        }),
+      );
+    } catch (error) {
+      // Already captured (or the answer was lost): the payment's own state is the truth.
+      const current = await this.call<RzpPayment>('GET', path);
+      if (current.status === 'captured') return toOrderStatus(current);
+      throw error;
+    }
   }
 
   async createRefund(
@@ -188,6 +200,24 @@ export class RazorpayProvider implements PaymentProvider {
     }
     return (await response.json()) as T;
   }
+}
+
+function toOrderStatus(payment: RzpPayment): OrderStatus {
+  const state =
+    payment.status === 'captured'
+      ? 'CAPTURED'
+      : payment.status === 'authorized'
+        ? 'AUTHORIZED'
+        : payment.status === 'failed'
+          ? 'FAILED'
+          : 'PENDING';
+  return {
+    state,
+    providerPaymentId: payment.id,
+    amountPaise: payment.amount,
+    method: payment.method ?? null,
+    failureReason: state === 'FAILED' ? (payment.error_description ?? null) : null,
+  };
 }
 
 function toRefundResult(refund: RzpRefund): RefundResult {

@@ -223,9 +223,18 @@ export class JobRunner implements OnApplicationShutdown {
     this.timers.set(
       name,
       setTimeout(() => {
-        void this.runOnce(name).finally(() => {
-          this.schedule(name, this.jobs[name].intervalMs);
-        });
+        // A failure outside the job body (e.g. the database is down while taking the lease)
+        // must not stop the worker process: log it and try again on the next tick.
+        void this.runOnce(name)
+          .catch((error: unknown) => {
+            this.logger.error(
+              `Job ${name} could not run`,
+              error instanceof Error ? error.message : String(error),
+            );
+          })
+          .finally(() => {
+            this.schedule(name, this.jobs[name].intervalMs);
+          });
       }, delayMs),
     );
   }

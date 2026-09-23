@@ -375,3 +375,76 @@ describe('staff sign-in', () => {
     expect(res.body.error.code).toBe('NOT_STAFF');
   });
 });
+
+describe('OTP provider failures', () => {
+  it('a failed send is reported, the code is withdrawn and the user can ask again at once', async () => {
+    const phone = randomMobile();
+    outbox.failNextSend();
+    const failed = await api.post<Error>('/customer/auth/otp', { phone });
+    expect(failed.status).toBe(503);
+    expect(failed.body.error.code).toBe('OTP_DELIVERY_FAILED');
+    expect(failed.headers['retry-after']).toBe('5');
+
+    const withdrawn = await app.db
+      .selectFrom('otp_challenge')
+      .select(['delivery_status', 'consumed_at'])
+      .where('phone_e164', '=', `+91${phone}`)
+      .executeTakeFirstOrThrow();
+    expect(withdrawn.delivery_status).toBe('FAILED');
+    expect(withdrawn.consumed_at).not.toBeNull();
+
+    // No cooldown after a failure: the retry is accepted immediately and works.
+    const retry = await api.post<Challenge>('/customer/auth/otp', { phone });
+    expect(retry.status).toBe(200);
+    const verified = await api.post<{ accessToken: string }>('/customer/auth/verify', {
+      challengeId: retry.body.challengeId,
+      phone,
+      code: outbox.latestCodeFor(retry.body.phone),
+    });
+    expect(verified.status).toBe(200);
+  });
+
+  it('a timeout withdraws the code even though the SMS may still arrive', async () => {
+    const phone = randomMobile();
+    outbox.failNextSend(true);
+    const failed = await api.post<Error>('/customer/auth/otp', { phone });
+    expect(failed.body.error.code).toBe('OTP_DELIVERY_FAILED');
+    const challenge = await app.db
+      .selectFrom('otp_challenge')
+      .select('id')
+      .where('phone_e164', '=', `+91${phone}`)
+      .executeTakeFirstOrThrow();
+    // Whatever code might have reached the phone is no longer accepted.
+    for (const code of ['000000', '123456']) {
+      const attempt = await api.post<Error>('/customer/auth/verify', {
+        challengeId: challenge.id,
+        phone,
+        code,
+      });
+      expect(attempt.body.error.code).toBe('OTP_INVALID');
+    }
+  });
+
+  it('failed sends still count towards the hourly limit (no free retries for abuse)', async () => {
+    const phone = randomMobile();
+    for (let i = 0; i < 5; i += 1) {
+      outbox.failNextSend();
+      const res = await api.post<Error>('/customer/auth/otp', { phone });
+      expect(res.body.error.code).toBe('OTP_DELIVERY_FAILED');
+    }
+    const blocked = await api.post<Error>('/customer/auth/otp', { phone });
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.error.code).toBe('OTP_LIMIT');
+  });
+
+  it('two simultaneous requests for one phone send exactly one code', async () => {
+    const phone = randomMobile();
+    const before = outbox.sentCount(`+91${phone}`);
+    const results = await Promise.all([
+      api.post<Challenge | Error>('/customer/auth/otp', { phone }),
+      api.post<Challenge | Error>('/customer/auth/otp', { phone }),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual([200, 429]);
+    expect(outbox.sentCount(`+91${phone}`) - before).toBe(1);
+  });
+});

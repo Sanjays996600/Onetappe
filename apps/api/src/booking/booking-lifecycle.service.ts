@@ -35,6 +35,9 @@ const FIELD_EVENT_NOTIFICATIONS: Partial<Record<FieldEvent, NotificationEvent>> 
   COMPLETE_SERVICE: 'SERVICE_COMPLETED',
 };
 
+/** How long an in-time authorized payment keeps an unpaid booking from expiring. */
+const AUTHORIZATION_GRACE = '30 minutes';
+
 @Injectable()
 export class BookingLifecycleService {
   constructor(
@@ -185,6 +188,25 @@ export class BookingLifecycleService {
       .select('id')
       .where('status', '=', 'PENDING_PAYMENT')
       .where('payment_due_by', '<', sql<Date>`now()`)
+      // The customer paid in time but the money is only authorized: give the capture
+      // (reconciliation job) a grace period instead of expiring a paid booking.
+      .where((eb) =>
+        eb.not(
+          eb.exists(
+            eb
+              .selectFrom('payment')
+              .select('payment.id')
+              .whereRef('payment.booking_id', '=', 'booking.id')
+              .where('payment.status', '=', 'AUTHORIZED')
+              .where('payment.authorized_at', '<=', sql<Date>`booking.payment_due_by`)
+              .where(
+                'payment.authorized_at',
+                '>',
+                sql<Date>`now() - ${AUTHORIZATION_GRACE}::interval`,
+              ),
+          ),
+        ),
+      )
       .orderBy('payment_due_by')
       .limit(limit)
       .execute();
@@ -194,6 +216,15 @@ export class BookingLifecycleService {
       const done = await inTransaction(this.db, context, async (tx) => {
         const booking = await this.transitions.lock(tx, id);
         if (booking.status !== 'PENDING_PAYMENT') return false;
+        // Re-checked under the booking lock: an authorization may have arrived meanwhile.
+        const authorized = await tx
+          .selectFrom('payment')
+          .select('id')
+          .where('booking_id', '=', id)
+          .where('status', '=', 'AUTHORIZED')
+          .where('authorized_at', '>', sql<Date>`now() - ${AUTHORIZATION_GRACE}::interval`)
+          .executeTakeFirst();
+        if (authorized) return false;
         await this.transitions.apply(tx, booking, 'HOLD_EXPIRED', context);
         await this.releasePromotion(tx, id);
         return true;

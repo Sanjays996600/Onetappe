@@ -19,6 +19,8 @@ const EnvSchema = z
     PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
     DATABASE_URL: z.url(),
     DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
+    DATABASE_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(500).max(60_000).default(5_000),
+    DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(300_000).default(15_000),
 
     /** Signs access tokens. */
     AUTH_TOKEN_SECRET: secret('AUTH_TOKEN_SECRET'),

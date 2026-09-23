@@ -8,7 +8,8 @@ import { BusinessRuleError, ForbiddenError, NotFoundError } from '../common/erro
 import type { ActionContext } from '../database/action-context.js';
 import { DATABASE } from '../database/database.module.js';
 import type { DB } from '../database/db.generated.js';
-import { inTransaction } from '../database/transaction.js';
+import { inTransaction, type Tx } from '../database/transaction.js';
+import { keyReusedError, type IdempotentRequest } from '../common/http/idempotency.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import { ServiceabilityService } from '../service-area/serviceability.service.js';
 
@@ -131,7 +132,8 @@ export class CustomerService {
     return rows.map(addressView);
   }
 
-  async addAddress(context: ActionContext, input: AddressInput) {
+  /** Saves an address; a retry with the same idempotency key returns the saved one. */
+  async addAddress(context: ActionContext, input: AddressInput, idempotency: IdempotentRequest) {
     const userId = requireActor(context);
     const location = await this.serviceability.resolve(this.db, {
       pincode: input.pincode,
@@ -139,6 +141,9 @@ export class CustomerService {
       lng: input.lng,
     });
     const row = await inTransaction(this.db, context, async (tx) => {
+      // Before any change, so a replay cannot move the default flag again.
+      const earlier = await this.addressByKey(tx, userId, idempotency);
+      if (earlier) return earlier;
       if (input.isDefault) {
         await tx
           .updateTable('address')
@@ -154,7 +159,7 @@ export class CustomerService {
         .where('archived_at', 'is', null)
         .limit(1)
         .executeTakeFirst();
-      return tx
+      const inserted = await tx
         .insertInto('address')
         .values({
           user_id: userId,
@@ -172,11 +177,29 @@ export class CustomerService {
           access_notes: input.accessNotes ?? null,
           locality_id: location?.localityId ?? null,
           is_default: input.isDefault ?? existing === undefined,
+          idempotency_key: idempotency.key,
+          request_hash: idempotency.hash,
         })
+        .onConflict((oc) => oc.columns(['user_id', 'idempotency_key']).doNothing())
         .returningAll()
-        .executeTakeFirstOrThrow();
+        .executeTakeFirst();
+      if (inserted) return inserted;
+      const winner = await this.addressByKey(tx, userId, idempotency);
+      if (!winner) throw new Error('Idempotent address vanished');
+      return winner;
     });
     return addressView(row);
+  }
+
+  private async addressByKey(tx: Tx, userId: string, idempotency: IdempotentRequest) {
+    const row = await tx
+      .selectFrom('address')
+      .selectAll()
+      .where('user_id', '=', userId)
+      .where('idempotency_key', '=', idempotency.key)
+      .executeTakeFirst();
+    if (row && row.request_hash !== idempotency.hash) throw keyReusedError();
+    return row ?? null;
   }
 
   async archiveAddress(context: ActionContext, addressId: string): Promise<void> {

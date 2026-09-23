@@ -1,3 +1,4 @@
+import { IdempotencyKey, requestHash } from '../common/http/idempotency.js';
 import {
   Body,
   Controller,
@@ -284,21 +285,36 @@ export class WorkerController {
   @Post('support-cases')
   openCase(
     @Actor() actor: ActionContext,
+    @IdempotencyKey() key: string,
     @Body(new ZodPipe(SupportBody)) body: z.infer<typeof SupportBody>,
   ) {
-    return this.support.open(actor, 'WORKER', { ...body, desiredResolution: null });
+    return this.support.open(
+      actor,
+      'WORKER',
+      { ...body, desiredResolution: null },
+      { key, hash: requestHash(body) },
+    );
   }
 
   @Post('sos')
-  sos(@Actor() actor: ActionContext, @Body(new ZodPipe(SosBody)) body: z.infer<typeof SosBody>) {
-    return this.safety.raise(actor, 'WORKER', {
-      bookingId: body.bookingId,
-      category: body.category,
-      severity: body.category === 'SOS' ? 'CRITICAL' : 'HIGH',
-      summary: body.note,
-      lat: body.lat,
-      lng: body.lng,
-      locationText: null,
-    });
+  sos(
+    @Actor() actor: ActionContext,
+    @IdempotencyKey() key: string,
+    @Body(new ZodPipe(SosBody)) body: z.infer<typeof SosBody>,
+  ) {
+    return this.safety.raise(
+      actor,
+      'WORKER',
+      {
+        bookingId: body.bookingId,
+        category: body.category,
+        severity: body.category === 'SOS' ? 'CRITICAL' : 'HIGH',
+        summary: body.note,
+        lat: body.lat,
+        lng: body.lng,
+        locationText: null,
+      },
+      { key, hash: requestHash(body) },
+    );
   }
 }

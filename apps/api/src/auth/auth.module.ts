@@ -44,7 +44,10 @@ import { StaffAuthService } from './staff-auth.service.js';
             return new ConsoleOtpSender();
           case 'msg91':
             // Presence of both values is enforced by the environment schema.
-            return new Msg91OtpSender(env.MSG91_AUTH_KEY ?? '', env.MSG91_TEMPLATE_ID ?? '');
+            return new Msg91OtpSender({
+              authKey: env.MSG91_AUTH_KEY ?? '',
+              templateId: env.MSG91_TEMPLATE_ID ?? '',
+            });
         }
       },
     },

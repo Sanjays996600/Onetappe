@@ -1,8 +1,8 @@
+import { IdempotencyKey, requestHash } from '../common/http/idempotency.js';
 import {
   Body,
   Controller,
   Get,
-  Headers,
   HttpCode,
   Param,
   ParseUUIDPipe,
@@ -16,7 +16,7 @@ import { BookingCreationService } from '../booking/booking-creation.service.js';
 import { BookingLifecycleService } from '../booking/booking-lifecycle.service.js';
 import { AvailabilityService } from '../catalog/availability.service.js';
 import { CatalogService } from '../catalog/catalog.service.js';
-import { BusinessRuleError, NotFoundError, ValidationError } from '../common/errors.js';
+import { BusinessRuleError, NotFoundError } from '../common/errors.js';
 import { ZodPipe } from '../common/http/zod.pipe.js';
 import type { ActionContext } from '../database/action-context.js';
 import { BookingCancellationService } from '../payments/booking-cancellation.service.js';
@@ -127,8 +127,6 @@ export const DeviceBody = z
   })
   .strict();
 
-const IDEMPOTENCY_KEY = /^[A-Za-z0-9_-]{8,100}$/;
-
 /**
  * Customer app API. Controllers only translate HTTP to service calls: every rule lives in
  * the services, the booking engine and the database.
@@ -183,9 +181,10 @@ export class CustomerController {
   @Post('addresses')
   addAddress(
     @Actor() actor: ActionContext,
+    @IdempotencyKey() key: string,
     @Body(new ZodPipe(AddressBody)) body: z.infer<typeof AddressBody>,
   ) {
-    return this.customers.addAddress(actor, body);
+    return this.customers.addAddress(actor, body, { key, hash: requestHash(body) });
   }
 
   @Post('addresses/:id/archive')
@@ -263,15 +262,9 @@ export class CustomerController {
   @Post('bookings')
   async createBooking(
     @Actor() actor: ActionContext,
-    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @IdempotencyKey() idempotencyKey: string,
     @Body(new ZodPipe(BookingBody)) body: z.infer<typeof BookingBody>,
   ) {
-    if (!idempotencyKey || !IDEMPOTENCY_KEY.test(idempotencyKey)) {
-      throw new ValidationError(
-        'IDEMPOTENCY_KEY_REQUIRED',
-        'Send a unique Idempotency-Key header (8–100 characters)',
-      );
-    }
     const created = await this.creation.create(
       {
         customerUserId: actor.actorUserId ?? '',
@@ -387,9 +380,10 @@ export class CustomerController {
   @Post('support-cases')
   openCase(
     @Actor() actor: ActionContext,
+    @IdempotencyKey() key: string,
     @Body(new ZodPipe(SupportBody)) body: z.infer<typeof SupportBody>,
   ) {
-    return this.support.open(actor, 'CUSTOMER', body);
+    return this.support.open(actor, 'CUSTOMER', body, { key, hash: requestHash(body) });
   }
 
   @Get('support-cases')
@@ -398,16 +392,25 @@ export class CustomerController {
   }
 
   @Post('sos')
-  sos(@Actor() actor: ActionContext, @Body(new ZodPipe(SosBody)) body: z.infer<typeof SosBody>) {
-    return this.safety.raise(actor, 'CUSTOMER', {
-      bookingId: body.bookingId,
-      category: 'SOS',
-      severity: 'CRITICAL',
-      summary: body.note,
-      lat: body.lat,
-      lng: body.lng,
-      locationText: null,
-    });
+  sos(
+    @Actor() actor: ActionContext,
+    @IdempotencyKey() key: string,
+    @Body(new ZodPipe(SosBody)) body: z.infer<typeof SosBody>,
+  ) {
+    return this.safety.raise(
+      actor,
+      'CUSTOMER',
+      {
+        bookingId: body.bookingId,
+        category: 'SOS',
+        severity: 'CRITICAL',
+        summary: body.note,
+        lat: body.lat,
+        lng: body.lng,
+        locationText: null,
+      },
+      { key, hash: requestHash(body) },
+    );
   }
 
   @Get('notifications')

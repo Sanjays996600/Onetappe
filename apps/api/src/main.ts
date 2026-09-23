@@ -8,4 +8,8 @@ async function main(): Promise<void> {
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
 }
 
-void main();
+main().catch((error: unknown) => {
+  // Fail fast and visibly; the process supervisor restarts the service.
+  console.error('Start-up failed:', error instanceof Error ? error.message : error);
+  process.exit(1);
+});

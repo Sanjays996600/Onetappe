@@ -1,7 +1,12 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { sql, type Kysely } from 'kysely';
 import { Clock } from '../../common/clock.js';
-import { RateLimitedError, UnauthorizedError, type AppError } from '../../common/errors.js';
+import {
+  RateLimitedError,
+  ServiceUnavailableError,
+  UnauthorizedError,
+  type AppError,
+} from '../../common/errors.js';
 import { ENV } from '../../config/config.module.js';
 import type { Env } from '../../config/env.js';
 import { systemContext } from '../../database/action-context.js';
@@ -9,7 +14,7 @@ import { DATABASE } from '../../database/database.module.js';
 import type { DB } from '../../database/db.generated.js';
 import { inTransaction } from '../../database/transaction.js';
 import { hmacSha256Hex, randomDigits, safeEqual } from '../../security/crypto.js';
-import { OTP_SENDER, type OtpSender } from './otp-sender.js';
+import { OTP_SENDER, OtpDeliveryError, type OtpDelivery, type OtpSender } from './otp-sender.js';
 
 /** OTP rules. Kept together so they are easy to review and tune. */
 export const OTP_POLICY = {
@@ -34,6 +39,8 @@ export interface OtpRequested {
 
 @Injectable()
 export class OtpService {
+  private readonly logger = new Logger('OTP');
+
   constructor(
     @Inject(DATABASE) private readonly db: Kysely<DB>,
     @Inject(OTP_SENDER) private readonly sender: OtpSender,
@@ -62,7 +69,11 @@ export class OtpService {
       const recent = await tx
         .selectFrom('otp_challenge')
         .select((eb) => [
-          eb.fn.max<Date | null>('created_at').as('last'),
+          // A code whose delivery failed does not hold back the next request.
+          eb.fn
+            .max<Date | null>('created_at')
+            .filterWhere('delivery_status', '<>', 'FAILED')
+            .as('last'),
           eb.fn.countAll<number>().filterWhere('created_at', '>', hoursAgo(now, 1)).as('hour'),
           eb.fn.countAll<number>().filterWhere('created_at', '>', hoursAgo(now, 24)).as('day'),
           eb.fn
@@ -160,7 +171,39 @@ export class OtpService {
 
     // Sent after commit: a stored challenge without a delivered SMS is harmless, the
     // reverse (an SMS for a code we did not store) would confuse the user.
-    await this.sender.send(phoneE164, code, locale);
+    let delivery: OtpDelivery;
+    try {
+      delivery = await this.sender.send(phoneE164, code, locale);
+    } catch (error) {
+      const reason =
+        error instanceof OtpDeliveryError ? error.message : 'Unexpected OTP provider error';
+      // The code is withdrawn even if the provider may have delivered it after a timeout:
+      // the user simply asks again and receives a new one.
+      await inTransaction(this.db, systemContext(requestId), (tx) =>
+        tx
+          .updateTable('otp_challenge')
+          .set({
+            delivery_status: 'FAILED',
+            delivery_error: reason.slice(0, 300),
+            consumed_at: this.clock.now(),
+          })
+          .where('id', '=', issued.challengeId)
+          .execute(),
+      );
+      this.logger.warn(`OTP delivery failed for challenge ${issued.challengeId}: ${reason}`);
+      throw new ServiceUnavailableError(
+        'OTP_DELIVERY_FAILED',
+        'We could not send the code right now. Please try again.',
+        5,
+      );
+    }
+    await inTransaction(this.db, systemContext(requestId), (tx) =>
+      tx
+        .updateTable('otp_challenge')
+        .set({ delivery_status: 'SENT', delivery_reference: delivery.reference })
+        .where('id', '=', issued.challengeId)
+        .execute(),
+    );
     return issued;
   }
 

@@ -154,7 +154,7 @@ describe('Razorpay webhook parsing', () => {
   });
 
   it('ignores events it does not act on, with a stable id when the header is absent', () => {
-    const raw = Buffer.from(JSON.stringify({ event: 'payment.authorized', payload: {} }));
+    const raw = Buffer.from(JSON.stringify({ event: 'order.notification.delivered', payload: {} }));
     const first = provider.parseWebhook(raw, {});
     expect(first.type).toBe('IGNORED');
     expect(provider.parseWebhook(raw, {}).eventId).toBe(first.eventId);
@@ -228,9 +228,48 @@ describe('Razorpay API calls', () => {
       state: 'FAILED',
       failureReason: 'Declined',
     });
-    // A retry in progress after a failed attempt is not a failure.
+    // A later attempt that is authorized (not yet captured) is reported as such.
+    expect(await provider.fetchOrderStatus('o')).toMatchObject({
+      state: 'AUTHORIZED',
+      providerPaymentId: 'p5',
+    });
     expect((await provider.fetchOrderStatus('o')).state).toBe('PENDING');
-    expect((await provider.fetchOrderStatus('o')).state).toBe('PENDING');
+  });
+
+  it('captures an authorized payment for the full amount', async () => {
+    const { calls, impl } = fakeFetch([
+      { body: { id: 'pay_7', order_id: 'o', amount: 58_882, status: 'captured', method: 'card' } },
+    ]);
+    const status = await new RazorpayProvider(config, impl).capturePayment('pay_7', 58_882);
+    expect(calls[0]).toMatchObject({
+      url: 'https://api.razorpay.com/v1/payments/pay_7/capture',
+      method: 'POST',
+      body: { amount: 58_882, currency: 'INR' },
+    });
+    expect(status).toMatchObject({ state: 'CAPTURED', providerPaymentId: 'pay_7' });
+  });
+
+  it('treats "already captured" as success after checking the payment itself', async () => {
+    const { calls, impl } = fakeFetch([
+      { status: 400, body: { error: { description: 'This payment has already been captured' } } },
+      { body: { id: 'pay_8', order_id: 'o', amount: 100, status: 'captured' } },
+    ]);
+    const status = await new RazorpayProvider(config, impl).capturePayment('pay_8', 100);
+    expect(calls[1]).toMatchObject({
+      url: 'https://api.razorpay.com/v1/payments/pay_8',
+      method: 'GET',
+    });
+    expect(status.state).toBe('CAPTURED');
+  });
+
+  it('reports a capture failure when the payment is not captured', async () => {
+    const { impl } = fakeFetch([
+      { status: 400, body: { error: { description: 'Capture amount mismatch' } } },
+      { body: { id: 'pay_9', order_id: 'o', amount: 100, status: 'authorized' } },
+    ]);
+    await expect(new RazorpayProvider(config, impl).capturePayment('pay_9', 90)).rejects.toThrow(
+      'HTTP 400',
+    );
   });
 
   it('passes our refund id to the gateway and finds the refund by it on retry', async () => {

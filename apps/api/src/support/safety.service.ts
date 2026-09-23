@@ -5,7 +5,8 @@ import { BusinessRuleError, NotFoundError, ValidationError } from '../common/err
 import type { ActionContext } from '../database/action-context.js';
 import { DATABASE } from '../database/database.module.js';
 import type { DB } from '../database/db.generated.js';
-import { inTransaction } from '../database/transaction.js';
+import { inTransaction, type Tx } from '../database/transaction.js';
+import { keyReusedError, type IdempotentRequest } from '../common/http/idempotency.js';
 
 export const SAFETY_CATEGORIES = [
   'SOS',
@@ -46,14 +47,21 @@ export class SafetyService {
     private readonly clock: Clock,
   ) {}
 
+  /**
+   * Records an incident. A retry with the same idempotency key returns the incident the
+   * first request created (a repeated SOS press with a new key opens a new incident).
+   */
   async raise(
     context: ActionContext,
     reporterRole: 'CUSTOMER' | 'WORKER' | 'STAFF',
     input: NewIncident,
+    idempotency: IdempotentRequest,
   ) {
     const reporter = context.actorUserId;
     if (!reporter) throw new ValidationError('ACTOR_REQUIRED', 'Sign in required');
     const incident = await inTransaction(this.db, context, async (tx) => {
+      const earlier = await this.findByKey(tx, reporter, idempotency);
+      if (earlier) return earlier;
       if (input.bookingId) {
         const involved = await tx
           .selectFrom('booking as b')
@@ -83,9 +91,17 @@ export class SafetyService {
           lng: input.lng === null ? null : String(input.lng),
           location_text: input.locationText,
           review_due_at: new Date(this.clock.now().getTime() + 24 * 3_600_000),
+          idempotency_key: idempotency.key,
+          request_hash: idempotency.hash,
         })
+        .onConflict((oc) => oc.columns(['reported_by_user_id', 'idempotency_key']).doNothing())
         .returning(['id', 'incident_code', 'severity', 'status'])
-        .executeTakeFirstOrThrow();
+        .executeTakeFirst();
+      if (!row) {
+        const winner = await this.findByKey(tx, reporter, idempotency);
+        if (!winner) throw new Error('Idempotent safety incident vanished');
+        return winner;
+      }
       await tx
         .insertInto('safety_incident_event')
         .values({
@@ -97,9 +113,9 @@ export class SafetyService {
           source: context.source,
         })
         .execute();
-      return row;
+      return { ...row, replayed: false };
     });
-    if (incident.severity === 'CRITICAL') {
+    if (incident.severity === 'CRITICAL' && !incident.replayed) {
       // Operations dashboards poll open CRITICAL incidents; paging integrations hook in here.
       this.logger.error(`CRITICAL safety incident ${incident.incident_code} raised`);
     }
@@ -108,6 +124,25 @@ export class SafetyService {
       incidentCode: incident.incident_code,
       severity: incident.severity,
       status: incident.status,
+      replayed: incident.replayed,
+    };
+  }
+
+  private async findByKey(tx: Tx, reporter: string, idempotency: IdempotentRequest) {
+    const row = await tx
+      .selectFrom('safety_incident')
+      .select(['id', 'incident_code', 'severity', 'status', 'request_hash'])
+      .where('reported_by_user_id', '=', reporter)
+      .where('idempotency_key', '=', idempotency.key)
+      .executeTakeFirst();
+    if (!row) return null;
+    if (row.request_hash !== idempotency.hash) throw keyReusedError();
+    return {
+      id: row.id,
+      incident_code: row.incident_code,
+      severity: row.severity,
+      status: row.status,
+      replayed: true,
     };
   }
 

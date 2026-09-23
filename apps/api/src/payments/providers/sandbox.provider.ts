@@ -83,6 +83,23 @@ export class SandboxPaymentProvider implements PaymentProvider {
     });
   }
 
+  capturePayment(providerPaymentId: string, amountPaise: number): Promise<OrderStatus> {
+    const entry = [...this.orders.entries()].find(([, o]) => o.paymentId === providerPaymentId);
+    if (!entry) return Promise.reject(new Error(`Unknown sandbox payment ${providerPaymentId}`));
+    const [orderId, order] = entry;
+    if (order.state === 'AUTHORIZED') {
+      if (amountPaise !== order.amountPaise) {
+        return Promise.reject(new Error('Capture amount must equal the authorized amount'));
+      }
+      order.state = 'CAPTURED';
+      this.captures += 1;
+    }
+    return this.fetchOrderStatus(orderId);
+  }
+
+  /** Number of server-side captures performed (for tests). */
+  captures = 0;
+
   createRefund(
     providerPaymentId: string,
     amountPaise: number,
@@ -120,6 +137,21 @@ export class SandboxPaymentProvider implements PaymentProvider {
       providerPaymentId: order.paymentId,
       amountPaise: amountPaise ?? order.amountPaise,
       method: 'upi',
+    });
+  }
+
+  /** The bank authorizes the payment but it is not captured (automatic capture off). */
+  authorize(providerOrderId: string): SignedWebhook {
+    const order = this.requireOrder(providerOrderId);
+    order.state = 'AUTHORIZED';
+    order.paymentId ??= `sbx_pay_${randomToken(9)}`;
+    return this.sign({
+      type: 'PAYMENT_AUTHORIZED',
+      rawType: 'payment.authorized',
+      providerOrderId,
+      providerPaymentId: order.paymentId,
+      amountPaise: order.amountPaise,
+      method: 'card',
     });
   }
 

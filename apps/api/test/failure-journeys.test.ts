@@ -53,15 +53,19 @@ async function customerWithAddress(world: World) {
   const session = await signInWithOtp(app, api, 'customer');
   const client = api.as(session.accessToken);
   await client.patch('/customer/me', { fullName: 'Rahul Verma' });
-  const address = await client.post<Json>('/customer/addresses', {
-    contactName: 'Rahul Verma',
-    contactPhone: session.phone,
-    houseNumber: 'B-7',
-    pincode: world.pincode,
-    cityName: 'Noida',
-    lat: world.center.lat + 0.002,
-    lng: world.center.lng + 0.002,
-  });
+  const address = await client.post<Json>(
+    '/customer/addresses',
+    {
+      contactName: 'Rahul Verma',
+      contactPhone: session.phone,
+      houseNumber: 'B-7',
+      pincode: world.pincode,
+      cityName: 'Noida',
+      lat: world.center.lat + 0.002,
+      lng: world.center.lng + 0.002,
+    },
+    { 'idempotency-key': randomUUID() },
+  );
   return { session, client, addressId: address.body['id'] as string };
 }
 
@@ -633,5 +637,129 @@ describe('access control and personal data', () => {
       });
     expect(allowed.status).toBe(201);
     expect((allowed.body['booking'] as Json)['status']).toBe('CONFIRMED');
+  });
+});
+
+describe('authorized payments and out-of-order gateway events', () => {
+  async function bookAndOpenPayment() {
+    const { world } = await noida(1);
+    const { client, addressId } = await customerWithAddress(world);
+    const booking = await book(client, world, addressId);
+    const bookingId = booking.body['id'] as string;
+    const pay = await client.post<Json>(`/customer/bookings/${bookingId}/payments`);
+    const orderId = (pay.body['checkout'] as Json)['orderId'] as string;
+    return { client, bookingId, orderId, paymentId: pay.body['paymentId'] as string };
+  }
+
+  const paymentStatus = async (paymentId: string) =>
+    (
+      await app.db
+        .selectFrom('payment')
+        .select('status')
+        .where('id', '=', paymentId)
+        .executeTakeFirstOrThrow()
+    ).status;
+
+  const expireDeadline = (bookingId: string) =>
+    inTransaction(app.db, SYSTEM, (tx) =>
+      tx
+        .updateTable('booking')
+        .set({ payment_due_by: new Date(Date.now() - 1000) })
+        .where('id', '=', bookingId)
+        .execute(),
+    );
+
+  it('an authorized-only payment is captured by the server, and the booking confirmed', async () => {
+    const { client, bookingId, orderId, paymentId } = await bookAndOpenPayment();
+    await deliverWebhook(api, sandbox(app).authorize(orderId));
+    expect(await paymentStatus(paymentId)).toBe('AUTHORIZED');
+    // Authorized is not paid: the booking is not confirmed on an authorization.
+    expect((await client.get<Json>(`/customer/bookings/${bookingId}`)).body['status']).toBe(
+      'PENDING_PAYMENT',
+    );
+
+    await runJob(app, 'reconcile-payments');
+    expect((await sandbox(app).fetchOrderStatus(orderId)).state).toBe('CAPTURED');
+    expect(await paymentStatus(paymentId)).toBe('CAPTURED');
+    expect((await client.get<Json>(`/customer/bookings/${bookingId}`)).body['status']).toBe(
+      'CONFIRMED',
+    );
+
+    // The gateway's own payment.captured webhook then arrives: nothing changes twice.
+    const capturesBefore = sandbox(app).captures;
+    await deliverWebhook(api, sandbox(app).capture(orderId));
+    await runJob(app, 'reconcile-payments');
+    expect(sandbox(app).captures).toBe(capturesBefore);
+    const history = await app.db
+      .selectFrom('booking_status_history')
+      .select('event')
+      .where('booking_id', '=', bookingId)
+      .where('event', '=', 'PAYMENT_CAPTURED')
+      .execute();
+    expect(history).toHaveLength(1);
+  });
+
+  it('a payment authorized in time is not lost when the deadline passes before capture', async () => {
+    const { client, bookingId, orderId } = await bookAndOpenPayment();
+    await deliverWebhook(api, sandbox(app).authorize(orderId));
+    await inTransaction(app.db, SYSTEM, (tx) =>
+      tx
+        .updateTable('payment')
+        .set({ authorized_at: new Date(Date.now() - 60_000) })
+        .where('provider_order_id', '=', orderId)
+        .execute(),
+    );
+    await expireDeadline(bookingId);
+
+    await runJob(app, 'expire-unpaid-bookings');
+    expect((await client.get<Json>(`/customer/bookings/${bookingId}`)).body['status']).toBe(
+      'PENDING_PAYMENT',
+    );
+    await runJob(app, 'reconcile-payments');
+    expect((await client.get<Json>(`/customer/bookings/${bookingId}`)).body['status']).toBe(
+      'CONFIRMED',
+    );
+  });
+
+  it('an authorization after the booking expired is never captured (the hold lapses)', async () => {
+    const { client, bookingId, orderId, paymentId } = await bookAndOpenPayment();
+    await expireDeadline(bookingId);
+    await runJob(app, 'expire-unpaid-bookings');
+    expect((await client.get<Json>(`/customer/bookings/${bookingId}`)).body['status']).toBe(
+      'EXPIRED',
+    );
+    await deliverWebhook(api, sandbox(app).authorize(orderId));
+    await runJob(app, 'reconcile-payments');
+    // Still only authorized at the gateway, and in our records.
+    expect((await sandbox(app).fetchOrderStatus(orderId)).state).toBe('AUTHORIZED');
+    expect(await paymentStatus(paymentId)).toBe('AUTHORIZED');
+    const refunds = await app.db
+      .selectFrom('refund')
+      .select('id')
+      .where('booking_id', '=', bookingId)
+      .execute();
+    expect(refunds).toEqual([]); // nothing was taken, so there is nothing to refund
+  });
+
+  it('a failure event arriving after the capture does not undo the payment', async () => {
+    const { client, bookingId, orderId, paymentId } = await bookAndOpenPayment();
+    await deliverWebhook(api, sandbox(app).capture(orderId));
+    await deliverWebhook(api, sandbox(app).fail(orderId, 'Late failure notice'));
+    expect(await paymentStatus(paymentId)).toBe('CAPTURED');
+    expect((await client.get<Json>(`/customer/bookings/${bookingId}`)).body['status']).toBe(
+      'CONFIRMED',
+    );
+  });
+
+  it('a success after an earlier failed attempt in the same checkout confirms the booking', async () => {
+    const { client, bookingId, orderId, paymentId } = await bookAndOpenPayment();
+    await deliverWebhook(api, sandbox(app).fail(orderId, 'Wrong UPI PIN'));
+    expect(await paymentStatus(paymentId)).toBe('FAILED');
+    await deliverWebhook(api, sandbox(app).authorize(orderId));
+    expect(await paymentStatus(paymentId)).toBe('AUTHORIZED');
+    await runJob(app, 'reconcile-payments');
+    expect((await client.get<Json>(`/customer/bookings/${bookingId}`)).body['status']).toBe(
+      'CONFIRMED',
+    );
   });
 });

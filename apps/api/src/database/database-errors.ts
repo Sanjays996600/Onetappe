@@ -1,4 +1,9 @@
-import { AppError, BusinessRuleError, ConflictError } from '../common/errors.js';
+import {
+  AppError,
+  BusinessRuleError,
+  ConflictError,
+  ServiceUnavailableError,
+} from '../common/errors.js';
 
 /** Subset of the fields node-postgres puts on a server error. */
 export interface PgError {
@@ -35,6 +40,36 @@ export const PG = {
   BUSINESS_RULE: 'OT008',
 } as const;
 
+/** SQLSTATEs meaning the database could not serve the request right now. */
+const UNAVAILABLE_SQLSTATES = new Set([
+  '57P01', // admin_shutdown
+  '57P02', // crash_shutdown
+  '57P03', // cannot_connect_now
+  '53300', // too_many_connections
+  '57014', // query_canceled (statement timeout)
+  '25P03', // idle_in_transaction_session_timeout
+]);
+
+const UNAVAILABLE_NODE_CODES = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE']);
+
+/**
+ * True when the error means "the database is unreachable or overloaded", as opposed to a
+ * problem with the request. Covers server-side SQLSTATEs (class 08 and the list above),
+ * socket errors and node-postgres pool/connection failures.
+ */
+export function isDatabaseUnavailable(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const code = 'code' in error && typeof error.code === 'string' ? error.code : undefined;
+  if (code && (code.startsWith('08') || UNAVAILABLE_SQLSTATES.has(code))) return true;
+  if (code && UNAVAILABLE_NODE_CODES.has(code)) return true;
+  const message = error instanceof Error ? error.message : '';
+  return (
+    message.includes('timeout exceeded when trying to connect') ||
+    message.includes('Connection terminated') ||
+    message.includes('Client has encountered a connection error')
+  );
+}
+
 /** The worker already has an overlapping active reservation. */
 export function isReservationOverlap(error: unknown): boolean {
   return (
@@ -57,7 +92,14 @@ export function isUniqueViolation(error: unknown, constraint?: string): boolean 
  * returned unchanged (and becomes a 500 at the HTTP layer).
  */
 export function translateDatabaseError(error: unknown): unknown {
-  if (error instanceof AppError || !isPgError(error)) return error;
+  if (error instanceof AppError) return error;
+  if (isDatabaseUnavailable(error)) {
+    return new ServiceUnavailableError(
+      'TEMPORARILY_UNAVAILABLE',
+      'The service is briefly unavailable. Please try again.',
+    );
+  }
+  if (!isPgError(error)) return error;
 
   switch (error.code) {
     case PG.EXCLUSION_VIOLATION:

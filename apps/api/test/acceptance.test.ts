@@ -62,19 +62,23 @@ describe('HH60 acceptance journey (API only)', () => {
     ).toBe(200);
 
     // ---- 2. Adds a Noida address ----
-    const address = await customer.post<Json>('/customer/addresses', {
-      label: 'Home',
-      contactName: 'Anita Sharma',
-      contactPhone: customerSession.phone,
-      houseNumber: 'A-101',
-      building: 'Green Residency',
-      street: 'Sector 62',
-      landmark: 'Near metro station',
-      pincode: world.pincode,
-      cityName: 'Noida',
-      lat: NOIDA_SECTOR_62.lat + 0.004,
-      lng: NOIDA_SECTOR_62.lng + 0.003,
-    });
+    const address = await customer.post<Json>(
+      '/customer/addresses',
+      {
+        label: 'Home',
+        contactName: 'Anita Sharma',
+        contactPhone: customerSession.phone,
+        houseNumber: 'A-101',
+        building: 'Green Residency',
+        street: 'Sector 62',
+        landmark: 'Near metro station',
+        pincode: world.pincode,
+        cityName: 'Noida',
+        lat: NOIDA_SECTOR_62.lat + 0.004,
+        lng: NOIDA_SECTOR_62.lng + 0.003,
+      },
+      { 'idempotency-key': randomUUID() },
+    );
     expect(address.status).toBe(201);
     expect(address.body).toMatchObject({ serviceable: true, isDefault: true });
     const addressId = address.body['id'] as string;

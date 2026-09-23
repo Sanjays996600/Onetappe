@@ -15,4 +15,8 @@ async function main(): Promise<void> {
   app.get(JobRunner).start();
 }
 
-void main();
+main().catch((error: unknown) => {
+  // Fail fast and visibly; the process supervisor restarts the service.
+  console.error('Start-up failed:', error instanceof Error ? error.message : error);
+  process.exit(1);
+});

@@ -27,15 +27,31 @@ export interface TestApp {
   close(): Promise<void>;
 }
 
-export async function createTestApp(): Promise<TestApp> {
-  const env = loadEnv();
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-  const app = moduleRef.createNestApplication<NestFastifyApplication>(createAdapter(env), {
-    rawBody: true,
-  });
-  configureApp(app, env);
-  await app.init();
-  await app.getHttpAdapter().getInstance().ready();
+/**
+ * Boots the whole application for HTTP tests. `envOverrides` replace environment values
+ * for this instance only (e.g. a database URL routed through a fault-injecting proxy).
+ */
+export async function createTestApp(
+  envOverrides: Readonly<Record<string, string>> = {},
+): Promise<TestApp> {
+  const saved = Object.fromEntries(Object.keys(envOverrides).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, envOverrides);
+  let app: NestFastifyApplication;
+  try {
+    const env = loadEnv();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication<NestFastifyApplication>(createAdapter(env), {
+      rawBody: true,
+    });
+    configureApp(app, env);
+    await app.init();
+    await app.getHttpAdapter().getInstance().ready();
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) Reflect.deleteProperty(process.env, key);
+      else process.env[key] = value;
+    }
+  }
   return {
     http: app,
     db: app.get<Kysely<DB>>(DATABASE),

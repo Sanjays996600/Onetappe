@@ -1,3 +1,4 @@
+import { IdempotencyKey, requestHash } from '../common/http/idempotency.js';
 import {
   Body,
   Controller,
@@ -207,9 +208,15 @@ export class AdminOperationsController {
   @RequirePermissions('safety.escalate')
   escalate(
     @Actor() actor: ActionContext,
+    @IdempotencyKey() key: string,
     @Body(new ZodPipe(IncidentBody)) body: z.infer<typeof IncidentBody>,
   ) {
-    return this.safety.raise(actor, 'STAFF', { ...body, lat: null, lng: null });
+    return this.safety.raise(
+      actor,
+      'STAFF',
+      { ...body, lat: null, lng: null },
+      { key, hash: requestHash(body) },
+    );
   }
 
   @Get('safety-incidents')

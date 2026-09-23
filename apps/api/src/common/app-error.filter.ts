@@ -6,7 +6,8 @@ import {
   type ExceptionFilter,
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { AppError } from './errors.js';
+import { isDatabaseUnavailable } from '../database/database-errors.js';
+import { AppError, ServiceUnavailableError } from './errors.js';
 
 /**
  * One error shape for every client (Android, iOS, web):
@@ -30,11 +31,20 @@ export class AppErrorFilter implements ExceptionFilter {
       details: {},
     };
 
+    // Queries outside inTransaction reach here untranslated.
+    if (!(error instanceof AppError) && isDatabaseUnavailable(error)) {
+      this.logger.warn(`Database unavailable for request ${requestId}`);
+      error = new ServiceUnavailableError(
+        'TEMPORARILY_UNAVAILABLE',
+        'The service is briefly unavailable. Please try again.',
+      );
+    }
+
     if (error instanceof AppError) {
       status = error.httpStatus;
       body = { code: error.code, message: error.message, details: { ...(error.details ?? {}) } };
       const retryAfter = error.details?.['retryAfterSeconds'];
-      if (status === 429 && typeof retryAfter === 'number')
+      if ((status === 429 || status === 503) && typeof retryAfter === 'number')
         void reply.header('retry-after', String(retryAfter));
     } else if (error instanceof HttpException) {
       status = error.getStatus();

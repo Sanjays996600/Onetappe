@@ -35,6 +35,7 @@ export interface Address {
   created_at: Generated<Timestamp>;
   house_number: string;
   id: Generated<string>;
+  idempotency_key: string | null;
   is_default: Generated<boolean>;
   label: Generated<string>;
   landmark: string | null;
@@ -42,6 +43,7 @@ export interface Address {
   lng: Numeric;
   locality_id: string | null;
   pincode: string;
+  request_hash: string | null;
   street: string | null;
   updated_at: Generated<Timestamp>;
   user_id: string;
@@ -425,6 +427,9 @@ export interface OtpChallenge {
   code_hash: string;
   consumed_at: Timestamp | null;
   created_at: Generated<Timestamp>;
+  delivery_error: string | null;
+  delivery_reference: string | null;
+  delivery_status: Generated<string>;
   expires_at: Timestamp;
   id: Generated<string>;
   max_attempts: Generated<number>;
@@ -435,6 +440,7 @@ export interface OtpChallenge {
 
 export interface Payment {
   amount_paise: number;
+  authorized_at: Timestamp | null;
   booking_id: string;
   captured_amount_paise: number | null;
   captured_at: Timestamp | null;
@@ -606,6 +612,7 @@ export interface SafetyIncident {
   closure_summary: string | null;
   commander_user_id: string | null;
   id: Generated<string>;
+  idempotency_key: string | null;
   incident_code: Generated<string>;
   lat: Numeric | null;
   lng: Numeric | null;
@@ -614,6 +621,7 @@ export interface SafetyIncident {
   reported_at: Generated<Timestamp>;
   reported_by_user_id: string;
   reporter_role: string;
+  request_hash: string | null;
   review_due_at: Timestamp | null;
   severity: string;
   source: string;
@@ -767,11 +775,13 @@ export interface SupportCase {
   description: string;
   desired_resolution: string | null;
   id: Generated<string>;
+  idempotency_key: string | null;
   next_update_due_at: Timestamp | null;
   opened_at: Generated<Timestamp>;
   owner_user_id: string | null;
   raised_by_role: string;
   raised_by_user_id: string;
+  request_hash: string | null;
   resolution_summary: string | null;
   resolved_at: Timestamp | null;
   safety_incident_id: string | null;

@@ -19,7 +19,9 @@ import { inTransaction, type Tx } from '../database/transaction.js';
 import {
   PAYMENT_PROVIDER,
   type PaymentProvider,
+  type OrderStatus,
   type ProviderEvent,
+  type ProviderEventType,
 } from './providers/payment-provider.js';
 import { RefundService } from './refund.service.js';
 
@@ -232,7 +234,7 @@ export class PaymentService {
     if (context.source === 'CUSTOMER_APP' && payment.customer_user_id !== context.actorUserId) {
       throw new ForbiddenError('NOT_YOUR_BOOKING', 'This booking belongs to another customer');
     }
-    if (payment.status === 'CREATED' && payment.provider_order_id) {
+    if (['CREATED', 'AUTHORIZED'].includes(payment.status) && payment.provider_order_id) {
       await this.reconcileOrder(payment.provider_order_id, context.requestId);
     }
     const after = await this.db
@@ -243,15 +245,54 @@ export class PaymentService {
     return after.status;
   }
 
-  /** Asks the gateway about one order and applies the answer like a webhook would. */
+  /**
+   * Asks the gateway about one order and applies the answer like a webhook would. An
+   * authorized payment is captured here (never in the webhook request) while its booking
+   * can still be paid; otherwise it is left uncaptured and the gateway releases the hold.
+   */
   async reconcileOrder(providerOrderId: string, requestId: string): Promise<void> {
-    const status = await this.provider.fetchOrderStatus(providerOrderId);
+    let status = await this.provider.fetchOrderStatus(providerOrderId);
     if (status.state === 'PENDING') return;
+    await this.applyStatus(providerOrderId, status, 'status.fetch', requestId);
+    if (status.state !== 'AUTHORIZED' || !status.providerPaymentId) return;
+
+    const payment = await this.db
+      .selectFrom('payment as p')
+      .innerJoin('booking as b', 'b.id', 'p.booking_id')
+      .select(['p.status', 'p.amount_paise', 'b.status as booking_status'])
+      .where('p.provider', '=', this.provider.name)
+      .where('p.provider_order_id', '=', providerOrderId)
+      .executeTakeFirst();
+    if (payment?.status !== 'AUTHORIZED') return;
+    if (payment.booking_status !== 'PENDING_PAYMENT') {
+      this.logger.log(
+        `Order ${providerOrderId} authorized after the booking became ${payment.booking_status}; not capturing`,
+      );
+      return;
+    }
+    if (status.amountPaise !== payment.amount_paise) return; // flagged when the event was applied
+    status = await this.provider.capturePayment(status.providerPaymentId, payment.amount_paise);
+    await this.applyStatus(providerOrderId, status, 'server.capture', requestId);
+  }
+
+  private async applyStatus(
+    providerOrderId: string,
+    status: OrderStatus,
+    rawType: string,
+    requestId: string,
+  ): Promise<void> {
+    if (status.state === 'PENDING') return;
+    const type: ProviderEventType =
+      status.state === 'CAPTURED'
+        ? 'PAYMENT_CAPTURED'
+        : status.state === 'AUTHORIZED'
+          ? 'PAYMENT_AUTHORIZED'
+          : 'PAYMENT_FAILED';
     const event: ProviderEvent = {
       // Deterministic id: repeated reconciliation of the same outcome is a duplicate.
       eventId: `status:${providerOrderId}:${status.state}:${status.providerPaymentId ?? ''}`,
-      type: status.state === 'CAPTURED' ? 'PAYMENT_CAPTURED' : 'PAYMENT_FAILED',
-      rawType: 'status.fetch',
+      type,
+      rawType,
       providerOrderId,
       providerPaymentId: status.providerPaymentId,
       providerRefundId: null,
@@ -260,20 +301,38 @@ export class PaymentService {
       failureReason: status.failureReason,
       refundReference: null,
     };
-    await this.processEvent(event, { source: 'status-fetch', status }, false, requestId);
+    await this.processEvent(event, { source: rawType, status }, false, requestId);
   }
 
-  /** Background job: resolves payments that are still open after a few minutes. */
+  /**
+   * Background job: resolves open payments. Authorized payments of payable bookings are
+   * captured straight away; unanswered orders are checked after two minutes (covers a lost
+   * webhook); a failed order is re-checked for a while, as the customer may retry in the
+   * same checkout.
+   */
   async reconcileOpenPayments(requestId: string, limit = 50): Promise<number> {
     const open = await this.db
-      .selectFrom('payment')
-      .select('provider_order_id')
-      .where('status', '=', 'CREATED')
-      .where('provider', '=', this.provider.name)
-      .where('provider_order_id', 'is not', null)
-      .where('created_at', '<', sql<Date>`now() - interval '2 minutes'`)
-      .where('created_at', '>', sql<Date>`now() - interval '2 days'`)
-      .orderBy('created_at')
+      .selectFrom('payment as p')
+      .innerJoin('booking as b', 'b.id', 'p.booking_id')
+      .select('p.provider_order_id')
+      .where('p.provider', '=', this.provider.name)
+      .where('p.provider_order_id', 'is not', null)
+      .where('p.created_at', '>', sql<Date>`now() - interval '2 days'`)
+      .where((eb) =>
+        eb.or([
+          eb.and([eb('p.status', '=', 'AUTHORIZED'), eb('b.status', '=', 'PENDING_PAYMENT')]),
+          eb.and([
+            eb('p.status', '=', 'CREATED'),
+            eb('p.created_at', '<', sql<Date>`now() - interval '2 minutes'`),
+          ]),
+          eb.and([
+            eb('p.status', '=', 'FAILED'),
+            eb('b.status', '=', 'PENDING_PAYMENT'),
+            eb('p.created_at', '>', sql<Date>`now() - interval '2 hours'`),
+          ]),
+        ]),
+      )
+      .orderBy('p.created_at')
       .limit(limit)
       .execute();
     let checked = 0;
@@ -331,6 +390,8 @@ export class PaymentService {
     context: ActionContext,
   ): Promise<string | null> {
     switch (event.type) {
+      case 'PAYMENT_AUTHORIZED':
+        return this.applyAuthorized(tx, event);
       case 'PAYMENT_CAPTURED':
         return this.applyCaptured(tx, event, context);
       case 'PAYMENT_FAILED':
@@ -425,6 +486,35 @@ export class PaymentService {
       });
       return 'LATE_PAYMENT_REFUNDED';
     }
+    return null;
+  }
+
+  /** Money is held but not taken yet; the reconciliation job captures it. */
+  private async applyAuthorized(tx: Tx, event: ProviderEvent): Promise<string | null> {
+    if (!event.providerOrderId) return 'AUTHORIZATION_WITHOUT_ORDER';
+    const payment = await tx
+      .selectFrom('payment')
+      .select(['id', 'status', 'amount_paise'])
+      .where('provider', '=', this.provider.name)
+      .where('provider_order_id', '=', event.providerOrderId)
+      .forUpdate()
+      .executeTakeFirst();
+    if (!payment) return 'UNKNOWN_ORDER';
+    if (!['CREATED', 'FAILED'].includes(payment.status)) return null; // already further on
+    if (event.amountPaise !== null && event.amountPaise !== payment.amount_paise) {
+      return `AMOUNT_MISMATCH expected ${String(payment.amount_paise)} got ${String(event.amountPaise)}`;
+    }
+    await tx
+      .updateTable('payment')
+      .set({
+        status: 'AUTHORIZED',
+        authorized_at: this.clock.now(),
+        provider_payment_id: event.providerPaymentId,
+        method: event.method,
+        failure_reason: null,
+      })
+      .where('id', '=', payment.id)
+      .execute();
     return null;
   }
 
