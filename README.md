@@ -113,3 +113,14 @@ uses an already installed Chromium. Service logs and traces of a failed run are 
    migration (CI's `migration-guard` refuses it).
 2. `pnpm db:migrate`
 3. `pnpm db:codegen` to regenerate `apps/api/src/database/db.generated.ts`, and commit it.
+
+## Customer website
+
+The customer-facing marketing and booking website is in `apps/web`. See
+[docs/13-customer-website.md](docs/13-customer-website.md) for API integration and deployment.
+
+```bash
+pnpm --filter @onetappe/web dev
+pnpm --filter @onetappe/web build
+pnpm --filter @onetappe/web test
+```
