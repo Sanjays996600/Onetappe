@@ -23,6 +23,7 @@ interface RzpPayment {
   id: string;
   order_id: string | null;
   amount: number;
+  currency?: string;
   status: 'created' | 'authorized' | 'captured' | 'refunded' | 'failed';
   method?: string;
   error_description?: string | null;
@@ -32,6 +33,7 @@ interface RzpRefund {
   id: string;
   payment_id: string;
   amount: number;
+  currency?: string;
   status: 'pending' | 'processed' | 'failed';
   receipt?: string | null;
   notes?: Record<string, string> | null;
@@ -104,9 +106,34 @@ export class RazorpayProvider implements PaymentProvider {
       providerPaymentId: payment?.id ?? refund?.payment_id ?? null,
       providerRefundId: refund?.id ?? null,
       amountPaise: refund?.amount ?? payment?.amount ?? null,
+      currency: refund?.currency ?? payment?.currency ?? null,
       method: payment?.method ?? null,
       failureReason: payment?.error_description ?? null,
       refundReference: refund?.receipt ?? refund?.notes?.['refund_id'] ?? null,
+    };
+  }
+
+  storedPayload(rawBody: Buffer): unknown {
+    const body = JSON.parse(rawBody.toString('utf8')) as {
+      event?: unknown;
+      entity?: unknown;
+      account_id?: unknown;
+      created_at?: unknown;
+      contains?: unknown;
+      payload?: Record<string, { entity?: Record<string, unknown> } | undefined>;
+    };
+    const entities: Record<string, unknown> = {};
+    for (const [name, fields] of Object.entries(STORED_ENTITY_FIELDS)) {
+      const entity = body.payload?.[name]?.entity;
+      if (entity) entities[name] = { entity: pick(entity, fields) };
+    }
+    return {
+      event: body.event,
+      entity: body.entity,
+      account_id: body.account_id,
+      created_at: body.created_at,
+      contains: body.contains,
+      payload: entities,
     };
   }
 
@@ -125,6 +152,7 @@ export class RazorpayProvider implements PaymentProvider {
         state: 'FAILED',
         providerPaymentId: failed.id,
         amountPaise: failed.amount,
+        currency: failed.currency ?? null,
         method: failed.method ?? null,
         failureReason: failed.error_description ?? null,
       };
@@ -133,6 +161,7 @@ export class RazorpayProvider implements PaymentProvider {
       state: 'PENDING',
       providerPaymentId: null,
       amountPaise: null,
+      currency: null,
       method: null,
       failureReason: null,
     };
@@ -202,6 +231,66 @@ export class RazorpayProvider implements PaymentProvider {
   }
 }
 
+/**
+ * Webhook fields kept for investigation and reconciliation. Anything not listed (the
+ * payer's email, phone, UPI id, card and bank-account details, free-form notes) is dropped
+ * before storage: it is not needed to prove what happened to the money.
+ */
+const STORED_ENTITY_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  payment: [
+    'id',
+    'entity',
+    'amount',
+    'currency',
+    'status',
+    'order_id',
+    'invoice_id',
+    'international',
+    'method',
+    'amount_refunded',
+    'refund_status',
+    'captured',
+    'fee',
+    'tax',
+    'error_code',
+    'error_description',
+    'error_source',
+    'error_step',
+    'error_reason',
+    'created_at',
+  ],
+  order: [
+    'id',
+    'entity',
+    'amount',
+    'amount_paid',
+    'amount_due',
+    'currency',
+    'receipt',
+    'status',
+    'attempts',
+    'created_at',
+  ],
+  refund: [
+    'id',
+    'entity',
+    'amount',
+    'currency',
+    'payment_id',
+    'receipt',
+    'status',
+    'speed_requested',
+    'speed_processed',
+    'created_at',
+  ],
+};
+
+function pick(entity: Record<string, unknown>, fields: readonly string[]): Record<string, unknown> {
+  const kept: Record<string, unknown> = {};
+  for (const field of fields) if (field in entity) kept[field] = entity[field];
+  return kept;
+}
+
 function toOrderStatus(payment: RzpPayment): OrderStatus {
   const state =
     payment.status === 'captured'
@@ -215,6 +304,7 @@ function toOrderStatus(payment: RzpPayment): OrderStatus {
     state,
     providerPaymentId: payment.id,
     amountPaise: payment.amount,
+    currency: payment.currency ?? null,
     method: payment.method ?? null,
     failureReason: state === 'FAILED' ? (payment.error_description ?? null) : null,
   };

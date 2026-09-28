@@ -82,6 +82,7 @@ describe('Razorpay webhook parsing', () => {
               id: 'pay_1',
               order_id: 'order_1',
               amount: 58_882,
+              currency: 'INR',
               status: 'captured',
               method: 'upi',
             },
@@ -97,10 +98,134 @@ describe('Razorpay webhook parsing', () => {
       providerPaymentId: 'pay_1',
       providerRefundId: null,
       amountPaise: 58_882,
+      currency: 'INR',
       method: 'upi',
       failureReason: null,
       refundReference: null,
     });
+  });
+
+  it('reads the currency of a refund, and no currency when the gateway sends none', () => {
+    const refund = Buffer.from(
+      JSON.stringify({
+        event: 'refund.processed',
+        payload: {
+          refund: {
+            entity: {
+              id: 'rfnd_1',
+              payment_id: 'pay_1',
+              amount: 500,
+              currency: 'INR',
+              status: 'processed',
+            },
+          },
+        },
+      }),
+    );
+    expect(provider.parseWebhook(refund, {})).toMatchObject({ amountPaise: 500, currency: 'INR' });
+    const bare = Buffer.from(
+      JSON.stringify({
+        event: 'payment.captured',
+        payload: {
+          payment: { entity: { id: 'pay_9', order_id: 'o', amount: 1, status: 'captured' } },
+        },
+      }),
+    );
+    expect(provider.parseWebhook(bare, {}).currency).toBeNull();
+  });
+
+  it("stores only the money facts of a webhook, not the payer's personal or card details", () => {
+    const raw = Buffer.from(
+      JSON.stringify({
+        entity: 'event',
+        account_id: 'acc_1',
+        event: 'order.paid',
+        contains: ['payment', 'order'],
+        created_at: 1_700_000_000,
+        payload: {
+          payment: {
+            entity: {
+              id: 'pay_1',
+              entity: 'payment',
+              amount: 58_882,
+              currency: 'INR',
+              status: 'captured',
+              order_id: 'order_1',
+              method: 'upi',
+              captured: true,
+              fee: 1_390,
+              tax: 212,
+              email: 'rahul@example.com',
+              contact: '+919876543210',
+              vpa: 'rahul@okbank',
+              card: { name: 'Rahul Verma', last4: '1111', network: 'Visa' },
+              bank_account: { ifsc: 'HDFC0000001', account_number: '1234567890' },
+              notes: { free_text: 'anything' },
+              description: 'Booking OT-1',
+            },
+          },
+          order: {
+            entity: {
+              id: 'order_1',
+              entity: 'order',
+              amount: 58_882,
+              amount_paid: 58_882,
+              currency: 'INR',
+              receipt: 'payment-uuid',
+              status: 'paid',
+              notes: { booking_code: 'OT-1' },
+            },
+          },
+        },
+      }),
+    );
+    const stored = provider.storedPayload(raw);
+    expect(stored).toEqual({
+      entity: 'event',
+      account_id: 'acc_1',
+      event: 'order.paid',
+      contains: ['payment', 'order'],
+      created_at: 1_700_000_000,
+      payload: {
+        payment: {
+          entity: {
+            id: 'pay_1',
+            entity: 'payment',
+            amount: 58_882,
+            currency: 'INR',
+            status: 'captured',
+            order_id: 'order_1',
+            method: 'upi',
+            captured: true,
+            fee: 1_390,
+            tax: 212,
+          },
+        },
+        order: {
+          entity: {
+            id: 'order_1',
+            entity: 'order',
+            amount: 58_882,
+            amount_paid: 58_882,
+            currency: 'INR',
+            receipt: 'payment-uuid',
+            status: 'paid',
+          },
+        },
+      },
+    });
+    const text = JSON.stringify(stored);
+    for (const secret of [
+      'rahul',
+      '9876543210',
+      'okbank',
+      '1111',
+      'HDFC',
+      '1234567890',
+      'free_text',
+    ]) {
+      expect(text).not.toContain(secret);
+    }
   });
 
   it('maps payment.failed with the gateway reason', () => {
@@ -191,7 +316,14 @@ describe('Razorpay API calls', () => {
         body: {
           items: [
             { id: 'p1', order_id: 'o', amount: 10, status: 'failed' },
-            { id: 'p2', order_id: 'o', amount: 10, status: 'captured', method: 'card' },
+            {
+              id: 'p2',
+              order_id: 'o',
+              amount: 10,
+              currency: 'INR',
+              status: 'captured',
+              method: 'card',
+            },
           ],
         },
       },
@@ -222,6 +354,7 @@ describe('Razorpay API calls', () => {
     expect(await provider.fetchOrderStatus('o')).toMatchObject({
       state: 'CAPTURED',
       providerPaymentId: 'p2',
+      currency: 'INR',
       method: 'card',
     });
     expect(await provider.fetchOrderStatus('o')).toMatchObject({

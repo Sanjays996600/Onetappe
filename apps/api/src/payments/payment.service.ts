@@ -24,6 +24,7 @@ import {
   type ProviderEvent,
   type ProviderEventType,
 } from './providers/payment-provider.js';
+import { moneyMismatch } from './money-check.js';
 import { RefundService } from './refund.service.js';
 
 /** A double tap waits this long for the order the first tap is creating. */
@@ -269,12 +270,8 @@ export class PaymentService {
     } catch {
       throw new ValidationError('WEBHOOK_MALFORMED', 'Webhook body could not be read');
     }
-    return this.processEvent(
-      event,
-      JSON.parse(rawBody.toString('utf8')) as unknown,
-      true,
-      requestId,
-    );
+    // Only the money facts are stored, never the payer's personal or card details.
+    return this.processEvent(event, this.provider.storedPayload(rawBody), true, requestId);
   }
 
   /**
@@ -337,7 +334,7 @@ export class PaymentService {
     const payment = await this.db
       .selectFrom('payment as p')
       .innerJoin('booking as b', 'b.id', 'p.booking_id')
-      .select(['p.status', 'p.amount_paise', 'b.status as booking_status'])
+      .select(['p.status', 'p.amount_paise', 'p.currency', 'b.status as booking_status'])
       .where('p.provider', '=', this.provider.name)
       .where('p.provider_order_id', '=', providerOrderId)
       .executeTakeFirst();
@@ -348,7 +345,8 @@ export class PaymentService {
       );
       return;
     }
-    if (status.amountPaise !== payment.amount_paise) return; // flagged when the event was applied
+    // Never capture a payment that differs from the order; it was flagged when applied.
+    if (moneyMismatch(payment, status)) return;
     status = await this.provider.capturePayment(status.providerPaymentId, payment.amount_paise);
     await this.applyStatus(providerOrderId, status, 'server.capture', requestId);
   }
@@ -375,6 +373,7 @@ export class PaymentService {
       providerPaymentId: status.providerPaymentId,
       providerRefundId: null,
       amountPaise: status.amountPaise,
+      currency: status.currency,
       method: status.method,
       failureReason: status.failureReason,
       refundReference: null,
@@ -514,11 +513,11 @@ export class PaymentService {
       .where('id', '=', ref.id)
       .forUpdate()
       .executeTakeFirstOrThrow();
+    // A payment that differs from the order never confirms the booking; the event stays
+    // recorded with the problem for finance to investigate (and raises an alert).
+    const mismatch = moneyMismatch(payment, event);
+    if (mismatch) return mismatch;
     if (payment.status === 'CAPTURED') return null; // Already applied via another event.
-
-    if (event.amountPaise !== null && event.amountPaise !== payment.amount_paise) {
-      return `AMOUNT_MISMATCH expected ${payment.amount_paise} got ${event.amountPaise}`;
-    }
 
     const alreadyPaid = await tx
       .selectFrom('payment')
@@ -536,7 +535,7 @@ export class PaymentService {
         provider_payment_id: event.providerPaymentId,
         method: event.method,
         captured_at: this.clock.now(),
-        captured_amount_paise: event.amountPaise ?? payment.amount_paise,
+        captured_amount_paise: payment.amount_paise, // equal to the event's, checked above
         failure_reason: null,
       })
       .where('id', '=', payment.id)
@@ -582,16 +581,15 @@ export class PaymentService {
     if (!event.providerOrderId) return 'AUTHORIZATION_WITHOUT_ORDER';
     const payment = await tx
       .selectFrom('payment')
-      .select(['id', 'status', 'amount_paise'])
+      .select(['id', 'status', 'amount_paise', 'currency'])
       .where('provider', '=', this.provider.name)
       .where('provider_order_id', '=', event.providerOrderId)
       .forUpdate()
       .executeTakeFirst();
     if (!payment) return 'UNKNOWN_ORDER';
+    const mismatch = moneyMismatch(payment, event);
+    if (mismatch) return mismatch;
     if (!['CREATED', 'FAILED'].includes(payment.status)) return null; // already further on
-    if (event.amountPaise !== null && event.amountPaise !== payment.amount_paise) {
-      return `AMOUNT_MISMATCH expected ${String(payment.amount_paise)} got ${String(event.amountPaise)}`;
-    }
     await tx
       .updateTable('payment')
       .set({

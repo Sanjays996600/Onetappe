@@ -205,7 +205,15 @@ or deleted.
 - **Edge cases:**
   - A second payment for an already-paid booking is refunded automatically.
   - A payment arriving after the booking expired or was cancelled is refunded automatically.
-  - An amount mismatch is flagged for finance.
+  - **Money must match exactly.** A payment confirms a booking only when the gateway reports the
+    order's amount to the paisa **and** its currency. A different, missing or malformed amount
+    or currency never confirms, authorizes or captures anything: the event is stored once with
+    the problem (for example `CURRENCY_MISMATCH expected INR got USD`), raises the
+    `PAYMENT_EVENT_PROBLEMS` alert, and waits for finance. The same rule applies to the
+    `refresh` and reconciliation paths. A refund settled for a different amount is flagged the
+    same way.
+  - **Stored webhooks hold only money facts:** ids, amounts, currency, status, fees and error
+    codes. The payer's email, phone, UPI id, card and bank details are dropped before storage.
 - **Refunds:**
   - Refunds follow the configured cancellation rules.
   - A refund that is not covered by a policy needs a second person holding `refund.approve`.
