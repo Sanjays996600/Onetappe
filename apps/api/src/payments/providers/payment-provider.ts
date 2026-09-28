@@ -38,6 +38,8 @@ export interface ProviderEvent {
   readonly providerPaymentId: string | null;
   readonly providerRefundId: string | null;
   readonly amountPaise: number | null;
+  /** ISO 4217 code as the gateway reports it (e.g. "INR"). */
+  readonly currency: string | null;
   readonly method: string | null;
   readonly failureReason: string | null;
   /** Our refund id, when the gateway echoes it back (receipt/notes). */
@@ -49,6 +51,8 @@ export interface OrderStatus {
   readonly state: 'PENDING' | 'AUTHORIZED' | 'CAPTURED' | 'FAILED';
   readonly providerPaymentId: string | null;
   readonly amountPaise: number | null;
+  /** ISO 4217 code as the gateway reports it (e.g. "INR"). */
+  readonly currency: string | null;
   readonly method: string | null;
   readonly failureReason: string | null;
 }
@@ -68,6 +72,11 @@ export interface PaymentProvider {
     rawBody: Buffer,
     headers: Readonly<Record<string, string | undefined>>,
   ): ProviderEvent;
+  /**
+   * The part of a verified webhook body kept for investigation: the money facts (ids,
+   * amounts, currency, status, errors), without the payer's personal or card details.
+   */
+  storedPayload(rawBody: Buffer): unknown;
   /** Server-to-server status check, used for reconciliation and "I have paid" refreshes. */
   fetchOrderStatus(providerOrderId: string): Promise<OrderStatus>;
   /**

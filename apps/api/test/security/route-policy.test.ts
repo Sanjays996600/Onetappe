@@ -121,6 +121,14 @@ describe('every route has a deliberate access policy', () => {
       'POST /api/v1/admin/safety/on-call',
       'POST /api/v1/admin/customers/:id/sessions/revoke',
       'POST /api/v1/admin/workers/:id/sessions/revoke',
+      'POST /api/v1/admin/config/training-modules',
+      'PATCH /api/v1/admin/config/training-modules/:code',
+      'POST /api/v1/admin/config/services/:id/verification-requirements',
+      'POST /api/v1/admin/config/services/:id/training-requirements',
+      'POST /api/v1/admin/config/worker-requirements/relaxations',
+      'POST /api/v1/admin/config/worker-requirements/relaxations/:id/approve',
+      'POST /api/v1/admin/config/worker-requirements/relaxations/:id/reject',
+      'POST /api/v1/admin/config/worker-requirements/relaxations/:id/withdraw',
     ];
     for (const route of needsMfa)
       expect({ route, mfa: routes.find((r) => key(r) === route)?.recentMfaMinutes }).toEqual({

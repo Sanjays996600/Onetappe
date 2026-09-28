@@ -1069,6 +1069,22 @@ export interface WorkerProfile {
   worker_code: string;
 }
 
+export interface WorkerRequirementRelaxation {
+  applied_txid: number | null;
+  decided_at: Timestamp | null;
+  decided_by: string | null;
+  decision_note: string | null;
+  id: Generated<string>;
+  module_code: string | null;
+  reason: string;
+  requested_at: Generated<Timestamp>;
+  requested_by: string;
+  requirement_kind: string;
+  service_id: string;
+  status: Generated<string>;
+  verification_type: string | null;
+}
+
 export interface WorkerReservation {
   booking_id: string;
   created_at: Generated<Timestamp>;
@@ -1267,6 +1283,7 @@ export interface DB {
   worker_presence: WorkerPresence;
   worker_presence_event: WorkerPresenceEvent;
   worker_profile: WorkerProfile;
+  worker_requirement_relaxation: WorkerRequirementRelaxation;
   worker_reservation: WorkerReservation;
   worker_restriction: WorkerRestriction;
   worker_service_permission: WorkerServicePermission;

@@ -11,6 +11,9 @@ import type {
 
 interface SandboxOrder {
   amountPaise: number;
+  currency: string;
+  /** What the gateway reports as paid; differs from the order only in mismatch tests. */
+  paid: { amountPaise: number; currency: string | null } | null;
   state: OrderStatus['state'];
   paymentId: string | null;
   failureReason: string | null;
@@ -22,6 +25,13 @@ interface SandboxRefund {
   amountPaise: number;
   reference: string;
   state: RefundResult['state'];
+}
+
+/** A payment that differs from its order, as a misbehaving gateway or a test would send it. */
+export interface PaidAs {
+  readonly amountPaise?: number;
+  /** null: the gateway sends no currency at all. */
+  readonly currency?: string | null;
 }
 
 export interface SignedWebhook {
@@ -46,6 +56,8 @@ export class SandboxPaymentProvider implements PaymentProvider {
     const orderId = `sbx_order_${randomToken(9)}`;
     this.orders.set(orderId, {
       amountPaise: input.amountPaise,
+      currency: input.currency,
+      paid: null,
       state: 'PENDING',
       paymentId: null,
       failureReason: null,
@@ -72,12 +84,18 @@ export class SandboxPaymentProvider implements PaymentProvider {
     return JSON.parse(rawBody.toString('utf8')) as ProviderEvent;
   }
 
+  storedPayload(rawBody: Buffer): unknown {
+    // Sandbox events carry no personal data.
+    return JSON.parse(rawBody.toString('utf8')) as unknown;
+  }
+
   fetchOrderStatus(providerOrderId: string): Promise<OrderStatus> {
     const order = this.orders.get(providerOrderId);
     return Promise.resolve({
       state: order?.state ?? 'PENDING',
       providerPaymentId: order?.paymentId ?? null,
-      amountPaise: order?.amountPaise ?? null,
+      amountPaise: order ? (order.paid?.amountPaise ?? order.amountPaise) : null,
+      currency: order ? (order.paid ? order.paid.currency : order.currency) : null,
       method: order?.paymentId ? 'upi' : null,
       failureReason: order?.failureReason ?? null,
     });
@@ -125,34 +143,52 @@ export class SandboxPaymentProvider implements PaymentProvider {
 
   // ---- Simulation controls (what a customer paying / a bank settling would cause) ----
 
-  /** The customer completes payment; returns the webhook the gateway would send. */
-  capture(providerOrderId: string, amountPaise?: number): SignedWebhook {
-    const order = this.requireOrder(providerOrderId);
-    order.state = 'CAPTURED';
-    order.paymentId ??= `sbx_pay_${randomToken(9)}`;
+  /**
+   * The customer completes payment; returns the webhook the gateway would send. `paidAs`
+   * simulates a gateway reporting a different amount or currency than the order's.
+   */
+  capture(providerOrderId: string, paidAs: PaidAs = {}): SignedWebhook {
+    const order = this.pay(providerOrderId, 'CAPTURED', paidAs);
     return this.sign({
       type: 'PAYMENT_CAPTURED',
       rawType: 'payment.captured',
       providerOrderId,
       providerPaymentId: order.paymentId,
-      amountPaise: amountPaise ?? order.amountPaise,
+      amountPaise: order.paid?.amountPaise ?? order.amountPaise,
+      currency: order.paid ? order.paid.currency : order.currency,
       method: 'upi',
     });
   }
 
   /** The bank authorizes the payment but it is not captured (automatic capture off). */
-  authorize(providerOrderId: string): SignedWebhook {
-    const order = this.requireOrder(providerOrderId);
-    order.state = 'AUTHORIZED';
-    order.paymentId ??= `sbx_pay_${randomToken(9)}`;
+  authorize(providerOrderId: string, paidAs: PaidAs = {}): SignedWebhook {
+    const order = this.pay(providerOrderId, 'AUTHORIZED', paidAs);
     return this.sign({
       type: 'PAYMENT_AUTHORIZED',
       rawType: 'payment.authorized',
       providerOrderId,
       providerPaymentId: order.paymentId,
-      amountPaise: order.amountPaise,
+      amountPaise: order.paid?.amountPaise ?? order.amountPaise,
+      currency: order.paid ? order.paid.currency : order.currency,
       method: 'card',
     });
+  }
+
+  private pay(
+    providerOrderId: string,
+    state: 'AUTHORIZED' | 'CAPTURED',
+    paidAs: PaidAs,
+  ): SandboxOrder {
+    const order = this.requireOrder(providerOrderId);
+    order.state = state;
+    order.paymentId ??= `sbx_pay_${randomToken(9)}`;
+    if (paidAs.amountPaise !== undefined || paidAs.currency !== undefined) {
+      order.paid = {
+        amountPaise: paidAs.amountPaise ?? order.amountPaise,
+        currency: paidAs.currency === undefined ? order.currency : paidAs.currency,
+      };
+    }
+    return order;
   }
 
   /** The payment attempt fails (declined, cancelled, timed out). */
@@ -166,12 +202,13 @@ export class SandboxPaymentProvider implements PaymentProvider {
       providerOrderId,
       providerPaymentId: `sbx_pay_${randomToken(9)}`,
       amountPaise: order.amountPaise,
+      currency: order.currency,
       failureReason: reason,
     });
   }
 
-  /** The bank settles a refund. */
-  settleRefund(providerRefundId: string): SignedWebhook {
+  /** The bank settles a refund (`paidAs` simulates a gateway reporting different money). */
+  settleRefund(providerRefundId: string, paidAs: PaidAs = {}): SignedWebhook {
     const refund = this.refunds.get(providerRefundId);
     if (!refund) throw new Error(`Unknown sandbox refund ${providerRefundId}`);
     refund.state = 'PROCESSED';
@@ -180,7 +217,8 @@ export class SandboxPaymentProvider implements PaymentProvider {
       rawType: 'refund.processed',
       providerPaymentId: refund.paymentId,
       providerRefundId: refund.id,
-      amountPaise: refund.amountPaise,
+      amountPaise: paidAs.amountPaise ?? refund.amountPaise,
+      currency: paidAs.currency === undefined ? 'INR' : paidAs.currency,
       refundReference: refund.reference,
     });
   }
@@ -194,6 +232,7 @@ export class SandboxPaymentProvider implements PaymentProvider {
       providerPaymentId: null,
       providerRefundId: null,
       amountPaise: null,
+      currency: null,
       method: null,
       failureReason: null,
       refundReference: null,

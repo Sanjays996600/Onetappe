@@ -13,6 +13,7 @@ import {
   type PaymentProvider,
   type ProviderEvent,
 } from './providers/payment-provider.js';
+import { moneyMismatch } from './money-check.js';
 
 export type RefundReason =
   | 'CUSTOMER_CANCELLED'
@@ -276,12 +277,13 @@ export class RefundService {
   ): Promise<string | null> {
     const refund = await tx
       .selectFrom('refund')
-      .select(['id', 'status'])
+      .innerJoin('payment', 'payment.id', 'refund.payment_id')
+      .select(['refund.id', 'refund.status', 'refund.amount_paise', 'payment.currency'])
       .where((eb) =>
         eb.or([
-          eb('provider_refund_id', '=', event.providerRefundId ?? ''),
+          eb('refund.provider_refund_id', '=', event.providerRefundId ?? ''),
           eb(
-            'id',
+            'refund.id',
             '=',
             isUuid(event.refundReference)
               ? event.refundReference
@@ -289,9 +291,12 @@ export class RefundService {
           ),
         ]),
       )
-      .forUpdate()
+      .forUpdate('refund')
       .executeTakeFirst();
     if (!refund) return 'UNKNOWN_REFUND';
+    // The gateway's word decides whether the refund went through; a different amount or
+    // currency than we asked for is flagged for finance, never silently accepted.
+    const mismatch = event.type === 'REFUND_PROCESSED' ? moneyMismatch(refund, event) : null;
     if (refund.status === 'PROCESSED') return null;
     if (event.providerRefundId) {
       await tx
@@ -320,7 +325,7 @@ export class RefundService {
       .set({ refund_id: refund.id })
       .where('provider_event_id', '=', event.eventId)
       .execute();
-    return null;
+    return mismatch;
   }
 
   private async settle(
