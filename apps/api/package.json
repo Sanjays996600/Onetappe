@@ -15,12 +15,12 @@
     "staff:bootstrap": "tsx src/staff-bootstrap.cli.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1138.0",
-    "@aws-sdk/s3-presigned-post": "^3.1138.0",
+    "@aws-sdk/client-s3": "^3.1140.0",
+    "@aws-sdk/s3-presigned-post": "^3.1140.0",
     "@fastify/rate-limit": "^11.2.0",
-    "@nestjs/common": "^12.0.4",
-    "@nestjs/core": "^12.0.4",
-    "@nestjs/platform-fastify": "^12.0.4",
+    "@nestjs/common": "^12.1.0",
+    "@nestjs/core": "^12.1.0",
+    "@nestjs/platform-fastify": "^12.1.0",
     "@onetappe/domain": "workspace:*",
     "fastify": "^5.12.5",
     "jose": "^6.2.12",
@@ -32,7 +32,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@nestjs/testing": "^12.0.4",
+    "@nestjs/testing": "^12.1.0",
     "@onetappe/api-client": "workspace:*",
     "@swc/core": "^1.16.2",
     "@types/node": "^22.20.4",
