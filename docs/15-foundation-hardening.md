@@ -195,7 +195,7 @@ than one service, for example a service needing `FITNESS` would block approval o
 workers who never do it. It is a product decision (**Q-G4d:** should readiness be per
 service, or stay "meets every active service's requirements"?). The impact figure returned
 when adding a requirement counts only the service's permitted workers, so the endpoint's
-response now understates the effect on onboarding until Q-G4d is answered.
+response understates the effect on onboarding until Q-G4d is answered.
 
 ---
 
