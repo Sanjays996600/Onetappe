@@ -32,4 +32,5 @@ These rules apply to every change in this repository. Carry them into any new pr
 - Money is stored as integer minor units, never floating point.
 - Every change comes with tests: unit tests, integration tests, and concurrency or failure tests where relevant.
 - Before every push, run `pnpm lint`, `pnpm format:check`, `pnpm typecheck` and `pnpm test`. Run Prettier from the repo root so `.prettierignore` applies.
+- API tests need `TEST_DATABASE_URL` (and the `TEST_S3_*` variables with a local S3 server), as in `.github/workflows/ci.yml`. For browser tests in a container with a pre-installed Chromium, set `E2E_CHROMIUM_PATH` to that browser.
 - Regenerate generated files with the tooling (`pnpm db:codegen`), never by hand.

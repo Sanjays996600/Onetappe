@@ -18,6 +18,7 @@ Launching in Noida with **HH60 House Help**; services, areas and prices are conf
 | [docs/12-production-readiness-gate.md](docs/12-production-readiness-gate.md) | Engineering gate: verified status of every component, load and concurrency results, open questions       |
 | [docs/11-security-readiness.md](docs/11-security-readiness.md)               | Security and readiness review: data map, authorization, SOS, recovery, blockers before pilot/production  |
 | [docs/13-system-design-guidelines.md](docs/13-system-design-guidelines.md)   | System design reference (28 chapters) that every design decision is checked against                      |
+| [docs/14-project-audit.md](docs/14-project-audit.md)                         | Audit against the working rules and design guidelines: verification run, conformance, new findings       |
 
 ## Repository
 
