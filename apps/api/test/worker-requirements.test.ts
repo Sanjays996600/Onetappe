@@ -99,6 +99,40 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Worker approval checks the requirements of every active service, so leave the shared
+  // test database as found: remove what these tests added, through the two-person flow.
+  const open = await app.db
+    .selectFrom('worker_requirement_relaxation')
+    .select(['id', 'requested_by'])
+    .where('service_id', '=', world.serviceId)
+    .where('status', '=', 'PENDING')
+    .execute();
+  for (const r of open) {
+    await inTransaction(
+      app.db,
+      { ...SYSTEM, actorUserId: r.requested_by, reason: 'Test cleanup' },
+      (tx) =>
+        tx
+          .updateTable('worker_requirement_relaxation')
+          .set({ status: 'WITHDRAWN', decided_at: new Date(), decision_note: 'Test cleanup' })
+          .where('id', '=', r.id)
+          .execute(),
+    );
+  }
+  const { verification } = await requirements();
+  for (const extra of verification.filter((v) => !['IDENTITY', 'POLICE'].includes(v))) {
+    const request = await manager.post<Json>('/admin/config/worker-requirements/relaxations', {
+      kind: 'VERIFICATION',
+      serviceId: world.serviceId,
+      verificationType: extra,
+      reason: 'Test cleanup',
+    });
+    await approver.post(
+      `/admin/config/worker-requirements/relaxations/${request.body['id'] as string}/approve`,
+      { note: 'Test cleanup' },
+    );
+  }
+  expect((await requirements()).verification).toEqual(['IDENTITY', 'POLICE']);
   await app.close();
 });
 

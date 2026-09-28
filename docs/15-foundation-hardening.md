@@ -178,3 +178,67 @@ these endpoints in a real environment yet. Please decide:
   founder-level role.
 
 The grants are one audited migration once you answer.
+
+---
+
+## 4. Finding during verification (new risk R-G4)
+
+Adding a requirement to **one** service affects the approval of **every** new worker. Worker
+readiness (`worker-onboarding.service.ts`) requires the union of the verification and
+training requirements of **all active services**, not only the services the worker will do.
+This was found when the G4 tests left an extra requirement on their test service and worker
+approvals in other test files failed. The tests now remove what they add, through the
+two-person flow.
+
+This is existing product behaviour and was **not changed**. It matters once there is more
+than one service, for example a service needing `FITNESS` would block approval of house-help
+workers who never do it. It is a product decision (**Q-G4d:** should readiness be per
+service, or stay "meets every active service's requirements"?). The impact figure returned
+when adding a requirement counts only the service's permitted workers, so the endpoint's
+response now understates the effect on onboarding until Q-G4d is answered.
+
+---
+
+## 5. Verification (full gate, after all Step 1 changes)
+
+| Step                                                 | Result                                                                                                                                                                                                                                            |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Format, lint, typecheck, build                       | Pass                                                                                                                                                                                                                                              |
+| Domain / API client / mobile kit / admin tests       | 23 / 7 / 3 / 7 pass                                                                                                                                                                                                                               |
+| API tests (PostgreSQL, least-privilege role)         | **34 files, 333 tests pass** (was 31 files, 301 tests): +5 money check, +2 Razorpay, +13 webhook validation, +12 worker requirements                                                                                                              |
+| Database and concurrency suites                      | Included above; also run separately after 0027 (47 pass)                                                                                                                                                                                          |
+| Browser E2E                                          | 7 of 7 pass                                                                                                                                                                                                                                       |
+| Restore drill                                        | Pass (dump and restore, data, triggers, constraints, runtime-role privileges)                                                                                                                                                                     |
+| Migrations from zero                                 | 28 applied; rerun applies 0; generated types match                                                                                                                                                                                                |
+| Migrations forward from the pre-change schema (0026) | 2 applied; the resulting schema is **identical** to a fresh one. Compared with 0026 it only **adds** (0 lines removed or changed): 1 table, 12 checks, 4 foreign keys, 1 primary key, 7 indexes, 6 functions, 20 triggers (all enabled), 4 grants |
+
+## 6. CI findings while this branch ran
+
+1. **A test-isolation fault of mine (fixed).** The G4 tests left an extra requirement on their
+   test service. Because of R-G4, worker approval in later test files then failed
+   (`WORKER_NOT_READY: PHOTO`). CI runs #42 and #43 were red for this reason. The G4 tests now
+   remove what they add, through the two-person flow, and assert the service is back to its
+   starting requirements.
+2. **A timing-dependent deadlock convoy in the existing booking engine (not changed; new risk
+   R-BURST).** In CI run #41 the existing test _forty customers, five workers, one time slot_
+   exceeded 30 s, and the three tests after it could not get a database connection.
+   - **What happened:** the database log shows reservation inserts for the same worker
+     deadlocking one at a time, one second apart. With an exclusion constraint, two
+     transactions inserting overlapping rows at the same moment can each wait for the other.
+     PostgreSQL finds the deadlock only after `deadlock_timeout` (1 s), and a deadlock during
+     the reservation insert is not treated as a lost race, so the whole booking transaction
+     is retried (up to 4 attempts).
+   - **Frequency:** the same test passed in runs #40 and #43, and locally in 10 of 10 runs
+     (about 0.5 s, zero deadlocks). It happens only when the inserts overlap closely, as on
+     the slower CI runner.
+   - **Not caused by this branch:** 0027 adds indexes on other tables, and no Step 1 change
+     touches the booking or reservation path.
+   - **Effect in production:** correctness holds (the constraint still allows exactly one
+     booking per slot), but in a burst for the same workers some customers could wait several
+     seconds or get a retry error.
+   - **Proposed fix (needs your approval, since it changes the booking engine):** take a
+     transaction-level advisory lock per worker (`pg_advisory_xact_lock` on the worker id)
+     immediately before the reservation insert. Competing reservations for one worker then
+     queue instead of deadlocking. The exclusion constraint stays the final guard. It would be
+     tested with the 2 / 10 / 50 / 100-way concurrency gate, repeated, plus the burst test
+     under an artificially small pool.

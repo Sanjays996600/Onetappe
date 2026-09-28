@@ -81,6 +81,24 @@ These findings are **new**. Unless marked fixed, they appear in the matrix (§6)
 | G10 | **Razorpay: the live documentation could not be re-checked from this environment.**                                                                                                                                                                                                                                                                                                                                   | Required before live payments                                                    |
 | G11 | **Separation of duties for workers:** the same `WORKER_OPERATIONS` person can verify documents **and** activate the worker; there is no second-person rule, unlike refunds. Business decision (Q-R2).                                                                                                                                                                                                                 | Decision needed                                                                  |
 
+### Status of the findings (updated 28 Sep 2026, Step 1: [15](15-foundation-hardening.md))
+
+| #   | Status                                                                                                                                                          |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G1  | Open (admin screens)                                                                                                                                            |
+| G2  | Open (push in the apps)                                                                                                                                         |
+| G3  | Open (Q-O3)                                                                                                                                                     |
+| G4  | **RESOLVED (foundation).** API, validation, audit and a database-enforced two-person rule for weakening; **role grants pending your decision (Q-G4a to Q-G4c)** |
+| G5  | **PROPOSED:** [18](18-retention-cleanup-proposal.md); nothing removed until periods are approved (Q-L1)                                                         |
+| G6  | **RESOLVED.** Exact amount and currency on every payment path; 13 HTTP tests                                                                                    |
+| G7  | **RESOLVED.** Migration 0027; plans in [15](15-foundation-hardening.md) §2                                                                                      |
+| G8  | **RESOLVED** (was already configurable, see [14](14-project-audit.md) A3); sizing per server remains with staging                                               |
+| G9  | Open                                                                                                                                                            |
+| G10 | Open: razorpay.com still blocked from this environment                                                                                                          |
+| G11 | Open (Q-R2)                                                                                                                                                     |
+| A1  | **DESIGNED:** [16](16-settlement-reconciliation-design.md); implementation blocked on Razorpay verification (R1 to R8) and Q-A1a to Q-A1e                       |
+| A2  | **PROPOSED:** [17](17-ledger-proposal.md); awaiting your and your CA's approval (Q-L-1 to Q-L-8)                                                                |
+
 Fixed during this gate: nothing needed fixing in code. The two new test files and the
 load-test harness are additions.
 
@@ -117,7 +135,7 @@ load-test harness are additions.
 | 25 Real devices             | Not done (B5)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Not done                                          |
 | 26 Failure testing          | [11](11-security-readiness.md) §13 plus the new concurrency tests                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Strong                                            |
 | 27 Load testing             | §5                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Done locally; repeat on staging hardware          |
-| 28 Business configuration   | All configurable through the API (and audited) except G4. **No real business values are set anywhere:** the seeds are test data (Q-B1 to Q-B12)                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Needs your input                                  |
+| 28 Business configuration   | All configurable through the API (and audited); G4 **resolved** (grants pending Q-G4). **No real business values are set anywhere:** the seeds are test data (Q-B1 to Q-B12)                                                                                                                                                                                                                                                                                                                                                                                                                                      | Needs your input                                  |
 
 ---
 
@@ -183,17 +201,20 @@ Pilot / Prod: blocker before pilot / before production.
 
 | Component                               | Class  | Pilot | Prod | Notes                                   |
 | --------------------------------------- | ------ | ----- | ---- | --------------------------------------- |
-| PostgreSQL schema, constraints, history | READY  |       |      | Indexes G7 (hardening)                  |
+| PostgreSQL schema, constraints, history | READY  |       |      | G7 **resolved** (0027)                  |
 | Booking state machine                   | READY  |       |      |                                         |
 | Double-booking / concurrency            | READY  |       |      | 100-way tested                          |
 | Pricing, taxes, serviceability engine   | READY  |       |      | Values are business input (§8)          |
 | Dispatch and availability               | HARDEN | ✔     |      | Depends on push (G2)                    |
 | Customer authentication (OTP)           | HARDEN | ✔     |      | MSG91 live (B4); devices (B5)           |
 | Worker authentication and eligibility   | READY  |       |      | Onboarding screens G3                   |
+| Worker requirements configuration (G4)  | HARDEN |       | ✔    | **Resolved** in code; role grants Q-G4  |
+| Settlement reconciliation (A1)          | NI     |       | ✔    | Designed (doc 16); Razorpay R1–R8       |
+| Double-entry ledger (A2)                | NI     |       | ✔    | Proposed (doc 17); accounting approval  |
 | Staff authentication, MFA, RBAC         | HARDEN |       | ✔    | Role decisions Q-R1 to Q-R3             |
 | Authorization (IDOR/BOLA, routes)       | READY  |       |      | Tested in CI                            |
 | Request limits                          | HARDEN | ✔     |      | Edge/WAF (B3)                           |
-| Payments (Razorpay)                     | HARDEN | ✔     |      | G6, G10, live (B4)                      |
+| Payments (Razorpay)                     | HARDEN | ✔     |      | G6 **resolved**; G10, live (B4); A1     |
 | Refunds                                 | HARDEN | ✔     |      | Admin screens (G1); policy (Q-B7)       |
 | Invoices                                | HARDEN |       | ✔    | GST treatment (Q-B4); admin lookup (G1) |
 | Worker earnings                         | HARDEN |       |      | Payout rule values (Q-B5)               |
@@ -208,7 +229,7 @@ Pilot / Prod: blocker before pilot / before production.
 | Customer app                            | HARDEN | ✔     |      | G2, G9, B5                              |
 | Worker app                              | PART   | ✔     |      | G2, G3, B5                              |
 | Admin panel                             | PART   | ✔     |      | G1                                      |
-| Background jobs                         | HARDEN |       | ✔    | G5                                      |
+| Background jobs                         | HARDEN |       | ✔    | G5 proposed (doc 18); periods Q-L1      |
 | Observability                           | HARDEN | ✔     |      | Deployed stack (B1); H1                 |
 | Log security                            | READY  |       |      |                                         |
 | Backup and disaster recovery            | PART   | ✔     |      | Real drill (B1)                         |
@@ -218,7 +239,7 @@ Pilot / Prod: blocker before pilot / before production.
 | Real-device testing                     | NI     | ✔     |      | B5                                      |
 | Data-protection rights (DPDP)           | NI     |       | ✔    | B6                                      |
 | Independent security review             | NI     |       | ✔    | B8                                      |
-| Load and capacity                       | HARDEN |       | ✔    | G8; staging rerun                       |
+| Load and capacity                       | HARDEN |       | ✔    | G8 **resolved**; staging rerun          |
 
 ### Details for every non-ready component
 
@@ -255,7 +276,8 @@ Pilot / Prod: blocker before pilot / before production.
 **Payments**
 
 - **Current:** complete and tested with the sandbox gateway.
-- **Gaps:** currency check (G6), live docs re-check (G10), live account (B4).
+- **Gaps:** ~~currency check (G6)~~ **resolved**; live docs re-check (G10); live account (B4);
+  settlement reconciliation (A1, designed).
 - **Risk:** a mismatch or API change unnoticed before real money.
 - **Work:**
   - add the currency check and an amount/currency-mismatch test;
