@@ -103,3 +103,78 @@ forward and compared with the 0026 original and with a fresh 0001–0027 databas
 plain `CREATE INDEX`. They lock writes to the four tables for the build: about 1.7 s at the
 synthetic volume above, negligible before launch. Future indexes on large live tables need a
 non-transactional path for `CREATE INDEX CONCURRENTLY`.
+
+---
+
+## 3. G4: training and verification requirements as configuration
+
+**Before:** training modules and each service's verification and training requirements
+(which decide who may be booked: `worker_ineligibility_reason()` reads them at every
+allocation) could be changed only by a migration, with no audit.
+
+**Now** (`0028_worker_requirement_configuration.sql`,
+`src/configuration/worker-requirement*.ts`):
+
+| Change                                  | How                                                                                                                                                                     | Who (permission)                        |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| View modules, requirements and requests | `GET /admin/config/worker-requirements`, `GET …/relaxations`                                                                                                            | `worker_requirement.read`               |
+| Create or rename a training module      | `POST /admin/config/training-modules`, `PATCH …/:code`                                                                                                                  | `worker_requirement.manage`             |
+| Switch a module off                     | `PATCH …/:code {isActive:false}`; **refused while any service requires it**                                                                                             | `worker_requirement.manage`             |
+| **Add** a requirement (strengthen)      | `POST /admin/config/services/:id/verification-requirements` or `…/training-requirements`; immediate; the response reports how many permitted workers do not meet it yet | `worker_requirement.manage`             |
+| **Remove** a requirement (weaken)       | `POST …/worker-requirements/relaxations` creates a **pending request**; nothing changes until approved                                                                  | `worker_requirement.manage`             |
+| Approve or reject a removal             | `POST …/relaxations/:id/approve` or `…/reject`, with a note; **never your own request**; approval removes the requirement in the same transaction                       | `worker_requirement.approve_relaxation` |
+| Withdraw a request                      | `POST …/relaxations/:id/withdraw`; requester only                                                                                                                       | `worker_requirement.manage`             |
+
+**Every mutating route:**
+
+- needs the permission **for all cities** (these rules apply everywhere);
+- needs a fresh authenticator check;
+- needs a reason or note of 5–500 characters;
+- rejects unknown fields;
+- is recorded in `audit_log` with the actor and the reason.
+
+**The database enforces the same rules**, whatever code or SQL the application role runs:
+
+- **Removing a requirement:** refused unless a relaxation for exactly that requirement was
+  approved **in the same transaction** by someone other than the requester. The four-eyes
+  `CHECK` covers this; the decision must come from the acting staff member.
+- **An old approval** cannot be reused to remove a requirement that was added again later.
+- **Relaxations** start as `PENDING`, cannot be edited, and move once to APPLIED, REJECTED or
+  WITHDRAWN.
+- **Requirement rows** cannot be edited in place. They cannot be truncated: the application
+  role has no TRUNCATE privilege, and the owner is stopped by a trigger.
+- **Training modules:** codes are immutable; modules are never deleted; a required module
+  stays active; a new training requirement needs an active module.
+
+**Tests:** `test/worker-requirements.test.ts` (12) covers:
+
+- no production role holds the permissions;
+- staff without them get 403;
+- a city-limited grant is refused;
+- validation, and the audit trail with actor and reason;
+- a required module can't be switched off (API and SQL);
+- adding a requirement makes a current worker ineligible, with the impact reported;
+- unknown or inactive modules are refused;
+- the full request → self-approval refused → approval by another person flow removes the
+  requirement and restores eligibility;
+- rejection and withdrawal;
+- SQL-level refusals: delete, edit, truncate, a forged approval, self-approval and a reused
+  approval.
+
+The route-policy test lists all 8 mutating routes as fresh-MFA routes. **Mutation check:**
+without the delete guard, 2 of the database tests fail.
+
+### Decision needed from you (not assumed)
+
+The three permissions exist and are enforced, but **no role holds them**, so nobody can use
+these endpoints in a real environment yet. Please decide:
+
+- **Q-G4a:** which role(s) may **view** requirements (`worker_requirement.read`). Options:
+  WORKER_OPERATIONS, OPERATIONS_HEAD, SAFETY, AUDITOR.
+- **Q-G4b:** which role(s) may **add** modules and requirements and **request** removals
+  (`worker_requirement.manage`). Options: WORKER_OPERATIONS, OPERATIONS_HEAD.
+- **Q-G4c:** which role(s) may **approve** removals (`worker_requirement.approve_relaxation`).
+  It should be different from the requesting role. Options: SAFETY, OPERATIONS_HEAD, or a
+  founder-level role.
+
+The grants are one audited migration once you answer.
